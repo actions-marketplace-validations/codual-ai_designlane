@@ -13,14 +13,19 @@ export interface ScanContext {
   read(file: SourceFile): Promise<string | undefined>;
 }
 
+/** What a plugin found in one framework's code. */
+export interface FrameworkFindings {
+  views: ViewFacts[];
+  tokens: DesignTokens;
+}
+
 /**
- * One framework Designmap understands. Supporting a new framework means writing one of these: how to detect it,
- * the facts about each of its views (the shared classifier decides screens from those), and its design tokens.
+ * One framework Designmap understands. Supporting a new framework means writing one `scan`: the facts about each of
+ * its views (the shared classifier decides screens from those) and its design tokens, or nothing when the project
+ * doesn't use the framework.
  */
 export interface FrameworkPlugin {
   id: FrameworkId;
   platforms: Platform[];
-  detect(ctx: ScanContext): Promise<boolean>;
-  views(ctx: ScanContext): Promise<ViewFacts[]>;
-  extractTokens(ctx: ScanContext): Promise<DesignTokens>;
+  scan(ctx: ScanContext): Promise<FrameworkFindings | undefined>;
 }

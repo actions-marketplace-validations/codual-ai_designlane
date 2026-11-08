@@ -18,6 +18,8 @@ export interface ViewFacts {
   routed: boolean;
   /** Distinct files that place it inside another view. */
   childFiles: number;
+  /** Built to hold other views (`struct Card<Content: View>`): a container, so always a component. */
+  holdsViews: boolean;
 }
 
 /** A view scoring this or more is a whole screen rather than a component. */
@@ -31,7 +33,10 @@ const WEIGHT = {
   longBody: 1,
   presented: 3,
   routed: 2,
-  reused: -2,
+  /** Placed inside another view and never opened as a page. */
+  embedded: -2,
+  /** Placed inside several files and never opened as a page. */
+  reused: -3,
   componentEnding: -3,
   componentWord: -2,
 } as const;
@@ -67,7 +72,8 @@ const COMPONENT_WORDS = new Set([
 /** Each view as a screen or a component, with the score that decided it. */
 export function classify(framework: FrameworkId, views: ViewFacts[]): ScreenRef[] {
   return views.map((view) => {
-    const score = screenScore(view);
+    // A container's content is the page, never the container, so its score is capped below the threshold.
+    const score = view.holdsViews ? Math.min(screenScore(view), SCREEN_THRESHOLD - 1) : screenScore(view);
     return {
       id: `${framework}:${view.file}#${view.name}`,
       framework,
@@ -87,6 +93,7 @@ function screenScore(view: ViewFacts): number {
   if (view.presented) score += WEIGHT.presented;
   else if (view.routed) score += WEIGHT.routed;
   else if (view.childFiles >= REUSED_IN_FILES) score += WEIGHT.reused;
+  else if (view.childFiles > 0) score += WEIGHT.embedded;
   return score;
 }
 

@@ -53,8 +53,16 @@ describe("structs", () => {
     expect(text.slice(inner!.open, inner!.close + 1)).toBe("{ var x = { 1 }() }");
   });
 
+  it("doesn't let an unclosed parenthesis swallow a struct's closing brace", () => {
+    const text = "struct A: View { f(1 }\nstruct B: View { Text() }";
+    const [a, b] = structs(text);
+    expect(a?.close).toBe(text.indexOf("}"));
+    expect(b?.close).toBe(text.length - 1);
+  });
+
   it("stays fast on pathological input", () => {
     const hostile = [
+      `${"(".repeat(100_000)}${"}".repeat(100_000)}`,
       "struct A: x ".repeat(40_000),
       `let a${" ".repeat(200_000)}=`,
       "#Preview {".repeat(20_000),

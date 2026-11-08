@@ -34,12 +34,13 @@ export async function scanRepo(root: string): Promise<ScanResult> {
     unreadable: ctx.unreadable,
   };
   for (const plugin of frameworks) {
-    if (!(await plugin.detect(ctx))) continue;
+    const found = await plugin.scan(ctx);
+    if (!found) continue;
     result.frameworks.push({
       framework: plugin.id,
       platforms: plugin.platforms,
-      screens: uniqueIds(classify(plugin.id, await plugin.views(ctx))).sort(bestFirst),
-      tokens: await plugin.extractTokens(ctx),
+      screens: uniqueIds(classify(plugin.id, found.views)).sort(bestFirst),
+      tokens: found.tokens,
     });
   }
   return result;

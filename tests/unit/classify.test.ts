@@ -10,6 +10,7 @@ const facts = (overrides: Partial<ViewFacts>): ViewFacts => ({
   presented: false,
   routed: false,
   childFiles: 0,
+  holdsViews: false,
   ...overrides,
 });
 
@@ -37,6 +38,23 @@ describe("classify", () => {
     ["reused in many files, despite page code", { pageElements: 3, childFiles: 3 }],
     ["only routed", { routed: true }],
   ])("treats a view %s as a component", (_, overrides) => expect(kind(overrides)).toBe("component"));
+
+  it("leans a view placed inside another, and never opened, towards component", () => {
+    expect(kind({ pageElements: 3 })).toBe("screen");
+    expect(kind({ pageElements: 3, childFiles: 1 })).toBe("component");
+  });
+
+  it("weighs reuse in several files more than a single embedding", () => {
+    expect(classify("swiftui", [facts({ pageElements: 3, childFiles: 1 })])[0]?.score).toBe(1);
+    expect(classify("swiftui", [facts({ pageElements: 3, childFiles: 3 })])[0]?.score).toBe(0);
+  });
+
+  it("keeps a container a component whatever it scores", () => {
+    const strong = { presented: true, pageElements: 3, name: "FeatureScreen", file: "features/F.swift" };
+    expect(kind({ ...strong, holdsViews: true })).toBe("component");
+    expect(classify("swiftui", [facts({ ...strong, holdsViews: true })])[0]?.score).toBe(2);
+    expect(kind(strong)).toBe("screen");
+  });
 
   it("lets being opened as a page outweigh reuse", () => {
     expect(kind({ presented: true, childFiles: 10 })).toBe("screen");

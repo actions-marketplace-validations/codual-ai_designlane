@@ -81,6 +81,35 @@ describe("screens are recognised by how the app opens them", () => {
       "a hosting root wrapped in a provider",
       "UIHostingController(rootView:\n  StoreProvider(store: s) {\n    ProfileView()\n  })",
     ],
+    [
+      "a widget configuration's content",
+      "StaticConfiguration(kind: k, provider: P(), content: { entry in\n  ProfileView()\n})",
+    ],
+    ["an app-specific sheet helper", ".appSheet(item: $x) {\n  ProfileView()\n}"],
+    [
+      "a popover wrapped in a scroll view",
+      ".popover(isPresented: $a) {\n  ScrollView {\n    ProfileView()\n  }\n}",
+    ],
+    [
+      "a navigation link after a compiler directive",
+      "#if os(iOS)\nNavigationLink {\n  ProfileView()\n} label: { Text(t) }\n#endif",
+    ],
+    ["a sheet's labelled content closure", ".sheet(item: $x, content: { item in\n  ProfileView()\n})"],
+    ["an app-specific full-screen cover helper", ".customFullScreenCover(isPresented: $a) { ProfileView() }"],
+    [
+      "an intent widget configuration",
+      "IntentConfiguration(kind: k, intent: I.self, provider: P()) { entry in ProfileView() }",
+    ],
+    ["a Live Activity configuration", "ActivityConfiguration(for: A.self) { context in ProfileView() }"],
+    [
+      "a sheet with a multi-line if",
+      ".sheet(isPresented: $s) {\n  if let u = user,\n     u.ok {\n    ProfileView()\n  }\n}",
+    ],
+    ["a split view's detail column", "NavigationSplitView {\n  Text(t)\n} detail: {\n  ProfileView()\n}"],
+    [
+      "a three-column split view's detail column",
+      "NavigationSplitView {\n  Text(t)\n} content: {\n  Text(t)\n} detail: {\n  ProfileView()\n}",
+    ],
     ["a sheet", ".sheet(isPresented: $composing) {\n  ProfileView()\n}"],
     ["a navigation link destination", "NavigationLink(destination: ProfileView()) { Text(t) }"],
     ["a tab with .tabItem", "TabView {\n  ProfileView()\n    .tabItem { Label(t, systemImage: s) }\n}"],
@@ -187,5 +216,99 @@ describe("screens are recognised by how the app opens them", () => {
     const started = performance.now();
     await kinds({ "App/A.swift": `${view("A")}\n${body}` });
     expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it("treats every page a switch inside a sheet picks as presented", async () => {
+    const sheet =
+      ".sheet(item: $kind) { kind in\n  switch kind {\n  case .a: First()\n  case .b: Second()\n  }\n}";
+    const result = await kinds({
+      "App/Root.swift": view("Root", sheet),
+      "App/First.swift": view("First"),
+      "App/Second.swift": view("Second"),
+    });
+    expect(result).toMatchObject({ First: "screen", Second: "screen" });
+  });
+
+  it("reads a router case that declares a variable before its page", async () => {
+    const names = ["Home", "Search", "Inbox"];
+    const cases = names.map(
+      (n) =>
+        `  case .${n.toLowerCase()}:\n    @Bindable var nav = navs\n    NavigationStack(path: $nav.path) {\n      ${n}()\n    }`,
+    );
+    const files: Record<string, string> = {
+      "App/Router.swift": view("Router", `switch tab {\n${cases.join("\n")}\n}`),
+    };
+    for (const n of names) files[`App/${n}.swift`] = view(n);
+    const result = await kinds(files);
+    expect(names.map((n) => result[n])).toEqual(["screen", "screen", "screen"]);
+  });
+
+  it("treats the app's own container views as components", async () => {
+    const result = await kinds({
+      "App/Panel.swift":
+        "struct Panel<Content: View>: View { var body: some View { NavigationStack { List { } }.toolbar { } } }",
+    });
+    expect(result.Panel).toBe("component");
+  });
+
+  it("treats a view placed inside another as a part, but not one built in a helper or stored for later", async () => {
+    const page = (name: string) => view(name, "ScrollView { List { Text(t) }.navigationTitle(t) }");
+    const result = await kinds({
+      "App/Host.swift": `${view("Host", "Embedded()")}\nvar drafts: some View { Drafts() }\nlet register = Register()`,
+      "App/Embedded.swift": page("Embedded"),
+      "App/Drafts.swift": page("Drafts"),
+      "App/Register.swift": page("Register"),
+    });
+    expect(result).toMatchObject({ Embedded: "component", Drafts: "screen", Register: "screen" });
+  });
+
+  it("doesn't treat an overlay helper named like a cover as a page", async () => {
+    const result = await kinds({
+      "App/Root.swift": view("Root", ".loadingCover(isLoading) {\n  Spinner()\n}"),
+      "App/Spinner.swift": view("Spinner", "ScrollView { Text(t) }"),
+    });
+    expect(result.Spinner).toBe("component");
+  });
+
+  it("looks through an app wrapper between a sheet and the switch inside it", async () => {
+    const sheet =
+      ".sheet(item: $k) { k in\n  StoreProvider(store: s) {\n    switch k {\n    case .a: First()\n    case .b: Second()\n    }\n  }\n}";
+    const result = await kinds({
+      "App/Root.swift": view("Root", sheet),
+      "App/First.swift": view("First"),
+      "App/Second.swift": view("Second"),
+    });
+    expect(result).toMatchObject({ First: "screen", Second: "screen" });
+  });
+
+  it("keeps a container a component even when presented, since its content is the page", async () => {
+    const result = await kinds({
+      "App/Root.swift": view("Root", ".sheet(isPresented: $a) { ModalScreen { Text(t) } }"),
+      "App/ModalScreen.swift":
+        "struct ModalScreen<Content: View>: View { var body: some View { EmptyView() } }",
+    });
+    expect(result.ModalScreen).toBe("component");
+  });
+
+  it("treats a stored view as indirect, typed or not, and a computed helper the same way", async () => {
+    const page = (name: string) => view(name, "ScrollView { List { Text(t) }.navigationTitle(t) }");
+    const result = await kinds({
+      "App/Host.swift": `${view("Host", "Text(t)")}\nlet a: Detail = Detail()\nvar b = Other()\nvar c: some View { Third() }`,
+      "App/Detail.swift": page("Detail"),
+      "App/Other.swift": page("Other"),
+      "App/Third.swift": page("Third"),
+    });
+    expect(result).toMatchObject({ Detail: "screen", Other: "screen", Third: "screen" });
+  });
+
+  it("treats the slides of a paged TabView carousel as components", async () => {
+    const result = await kinds({
+      "App/Root.swift": view(
+        "Root",
+        "TabView(selection: $page) {\n  Slide().tag(0)\n}\n.tabViewStyle(.page)",
+      ),
+      "App/Slide.swift": view("Slide", "ScrollView { Text(t) }"),
+    });
+    expect(result.Slide).toBe("component");
   });
 });

@@ -100,7 +100,7 @@ export interface StructDecl {
 
 const STRUCT = /\bstruct\s+([A-Za-z_]\w*)/g;
 
-/** Every struct declaration in code source, with its conformances and body. Linear in the file size. */
+/** Every struct declaration in blanked code (see `codeOnly`), with its conformances and body. Linear in the file size. */
 export function structs(code: string): StructDecl[] {
   const { nextOpen, closeOf } = braceIndex(code);
   const out: StructDecl[] = [];
@@ -132,19 +132,11 @@ export function structs(code: string): StructDecl[] {
 /** A declaration header longer than this isn't a real one; stops pathological input from scanning far. */
 const MAX_HEADER = 2000;
 
+/** For every offset, the next `{` at or after it, plus each bracket's matching close. */
 function braceIndex(code: string) {
   const nextOpen = new Int32Array(code.length + 1).fill(-1);
   for (let j = code.length - 1; j >= 0; j--) nextOpen[j] = code[j] === "{" ? j : (nextOpen[j + 1] ?? -1);
-  const closeOf = new Map<number, number>();
-  const stack: number[] = [];
-  for (let j = 0; j < code.length; j++) {
-    if (code[j] === "{") stack.push(j);
-    else if (code[j] === "}") {
-      const open = stack.pop();
-      if (open !== undefined) closeOf.set(open, j);
-    }
-  }
-  return { nextOpen, closeOf };
+  return { nextOpen, closeOf: bracketTree(code).closeOf };
 }
 
 function skipGenerics(text: string, start: number): number {
@@ -165,4 +157,97 @@ export function lineNumbers(text: string, offsets: number[]): number[] {
     for (; at < offset; at++) if (text[at] === "\n") line++;
     return line;
   });
+}
+
+/** The offset just after the last non-space character before `end`. */
+export const skipSpaceBack = (code: string, end: number) => {
+  let j = end;
+  while (j > 0 && /\s/.test(code[j - 1] ?? "")) j--;
+  return j;
+};
+
+/** The word just before `end`, ignoring whitespace: `sheet` in `.sheet (`. */
+export function identifierBefore(code: string, end: number): string {
+  const stop = skipSpaceBack(code, end);
+  let start = stop;
+  while (start > 0 && /\w/.test(code[start - 1] ?? "")) start--;
+  return code.slice(start, stop);
+}
+
+export interface BracketTree {
+  /** For every offset, the `(` or `{` it sits directly inside, or -1. */
+  enclosing: Int32Array;
+  closeOf: Map<number, number>;
+  openOf: Map<number, number>;
+}
+
+/** Every `(` and `{` with its matching close, and for every offset the bracket it sits directly inside. A close
+ * only pairs with its own kind of open, so an unbalanced `(` can't swallow a struct's `}`. */
+export function bracketTree(code: string): BracketTree {
+  const enclosing = new Int32Array(code.length).fill(-1);
+  const closeOf = new Map<number, number>();
+  const openOf = new Map<number, number>();
+  const stack: number[] = [];
+  for (let j = 0; j < code.length; j++) {
+    const c = code[j];
+    enclosing[j] = stack.at(-1) ?? -1;
+    if (c === "(" || c === "{") {
+      stack.push(j);
+    } else if (c === ")" || c === "}") {
+      const match = matchingOpen(code, stack, c === ")" ? "(" : "{");
+      if (match === -1) continue;
+      const open = stack[match] ?? -1;
+      stack.length = match;
+      closeOf.set(open, j);
+      openOf.set(j, open);
+    }
+  }
+  return { enclosing, closeOf, openOf };
+}
+
+/** How many unclosed brackets a close may skip to find its own kind; real code skips one or two at most. */
+const MAX_SKIPPED = 32;
+
+/** The stack index of the nearest open of kind `opener`, looking past at most `MAX_SKIPPED` others, or -1. */
+function matchingOpen(code: string, stack: number[], opener: string): number {
+  for (let k = stack.length - 1; k >= 0 && k >= stack.length - 1 - MAX_SKIPPED; k--) {
+    if (code[stack[k] ?? -1] === opener) return k;
+  }
+  return -1;
+}
+
+/** How far back to read for the code that owns a bracket, so hostile input stays fast. */
+export const HEADER_CHARS = 400;
+
+export type CallOwner = { kind: "call"; name: string; hasArguments: boolean };
+export type Owner =
+  | CallOwner
+  | { kind: "declaration"; name: string }
+  | { kind: "switch" }
+  | { kind: "conditional" }
+  | { kind: "labelled"; label: string };
+
+/** What a bracket belongs to: a call (`sheet`, `NavigationStack`), a function or property, a switch, an `if`, or a
+ * labelled closure (`label: {`). */
+export function ownerOf(code: string, tree: BracketTree, open: number): Owner {
+  const end = skipSpaceBack(code, open);
+  if (code[open] === "{") {
+    const header = code.slice(Math.max(0, end - HEADER_CHARS), end);
+    if (/\bswitch\b[^{}]*$/.test(header)) return { kind: "switch" };
+    // Not `#if`, a compiler directive rather than a block.
+    if (/(?<![#\w])(?:if|else|guard)\b[^{}]*$/.test(header)) return { kind: "conditional" };
+    // A function, or a computed property (`var body: some View {`), never a stored one (`var x = …`).
+    const declaration = header.match(
+      /\b(?:func\s+(?<func>\w+)\s*[(<][^{}]*|var\s+(?<property>\w+)\s*:[^{}=]*)$/,
+    );
+    if (declaration)
+      return { kind: "declaration", name: declaration.groups?.func ?? declaration.groups?.property ?? "" };
+    if (header.endsWith(":")) return { kind: "labelled", label: identifierBefore(code, end - 1) };
+  }
+  const callOpen = code[open] === "{" && code[end - 1] === ")" ? (tree.openOf.get(end - 1) ?? -1) : -1;
+  return {
+    kind: "call",
+    name: identifierBefore(code, callOpen === -1 ? end : callOpen),
+    hasArguments: callOpen !== -1,
+  };
 }

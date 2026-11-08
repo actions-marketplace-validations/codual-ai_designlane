@@ -91,6 +91,23 @@ describe("scanning a SwiftUI app", () => {
     const kinds = Object.fromEntries(
       (await scanRepo(root)).frameworks[0]!.screens.map((s) => [s.name, s.kind]),
     );
+    // Inner has page-like code of its own, but the app only ever places it inside Outer.
+    expect(kinds).toEqual({ Outer: "component", Inner: "component" });
+  });
+
+  it("scores a nested view on its own body when the parent doesn't place it", async () => {
+    const root = await tempDir({
+      "App/Outer.swift": [
+        "import SwiftUI",
+        "struct Outer: View {",
+        '  struct Inner: View { var body: some View { NavigationStack { List {}.navigationTitle("x").toolbar {} } } }',
+        '  var body: some View { Text("plain") }',
+        "}",
+      ].join("\n"),
+    });
+    const kinds = Object.fromEntries(
+      (await scanRepo(root)).frameworks[0]!.screens.map((s) => [s.name, s.kind]),
+    );
     expect(kinds).toEqual({ Outer: "component", Inner: "screen" });
   });
 
@@ -142,9 +159,27 @@ describe("scanning a SwiftUI app", () => {
         `let a = Text(x)${font("Inter-Regular")}${font("Inter-Bold")}${font("Inter-SemiBold")}`,
         `let b = Text(x)${font("Playfair Display")}`,
         `// ${font("Comic Sans")}`,
+        'let failure = Event.custom("PinCreateFailure")',
+        'extension Font { static let heading: Font = .custom("Lora-Bold", size: 20) }',
+        'let stacked = UIFont(name: "Lora-Regular_Medium", size: 14)',
+        'let wrapped = Text(x).font(.custom("Merriweather",\n  size: 12))',
+        'extension Font { static func body(_ s: CGFloat) -> Font { .custom("Lora", fixedSize: s) } }',
+        'let title = UILabel(); title.font = UIFont(name: "Lora-Italic", size: 20)',
       ].join("\n"),
     });
-    expect((await scanRepo(root)).frameworks[0]?.tokens.fonts).toEqual(["Inter", "Playfair Display"]);
+    expect((await scanRepo(root)).frameworks[0]?.tokens.fonts).toEqual([
+      "Lora",
+      "Inter",
+      "Merriweather",
+      "Playfair Display",
+    ]);
+  });
+
+  it("reads fonts quickly from a hostile file", async () => {
+    const root = await tempDir({ "App/F.swift": `import SwiftUI\n${'.custom("x'.repeat(100_000)}` });
+    const started = performance.now();
+    await scanRepo(root);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
   it("reads colour opacity and skips colours in comments", async () => {
