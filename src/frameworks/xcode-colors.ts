@@ -17,8 +17,8 @@ const Colorset = z.object({
     .optional(),
 });
 
-/** Asset-catalog components, as RGB channels or as a grayscale `white` value. */
-/** The colour as `#rrggbb[aa]`, or undefined when a channel can't be read (empty, `0x` with no digits, text). */
+/** Asset-catalog components (RGB channels, or a grayscale `white` value) as `#rrggbb[aa]`, or undefined when a
+ * channel can't be read (empty, `0x` with no digits, text). */
 function componentsToHex(c: Record<string, string>): string | undefined {
   // Xcode always writes opacity as a decimal (`1.000`), whatever format the colour channels use.
   const alpha = c.alpha === undefined ? 1 : Number(c.alpha);
@@ -54,16 +54,28 @@ export function parseColorset(rel: string, text: string | undefined): NamedColor
   }
   const parsed = Colorset.safeParse(json);
   if (!parsed.success) return undefined;
-  let light: string | undefined;
+  // Xcode's "Any, Light, Dark" appearances give a colour for any appearance plus explicit light and dark ones. The
+  // app shows the explicit one for its mode, and the "any" one where there's none. Each takes its first readable entry.
+  let anyAppearance: string | undefined;
+  let explicitLight: string | undefined;
   let dark: string | undefined;
   for (const entry of parsed.data.colors ?? []) {
     const components = entry.color?.components;
     const appearances = entry.appearances ?? [];
     if (!components || appearances.some((a) => a.value !== "dark" && a.value !== "light")) continue;
-    if (appearances.some((a) => a.appearance === "luminosity" && a.value === "dark"))
-      dark = componentsToHex(components) ?? dark;
-    else light ??= componentsToHex(components);
+    const luminosity = appearances.find((a) => a.appearance === "luminosity")?.value;
+    if (luminosity === "dark") dark ??= componentsToHex(components);
+    else if (luminosity === "light") explicitLight ??= componentsToHex(components);
+    else anyAppearance ??= componentsToHex(components);
   }
+  const light = explicitLight ?? anyAppearance;
   if (!light) return undefined;
-  return { name, light, ...(dark && dark !== light ? { dark } : {}), source: rel, kind: "asset" };
+  const darkMode = dark ?? anyAppearance;
+  return {
+    name,
+    light,
+    ...(darkMode && darkMode !== light ? { dark: darkMode } : {}),
+    source: rel,
+    kind: "asset",
+  };
 }

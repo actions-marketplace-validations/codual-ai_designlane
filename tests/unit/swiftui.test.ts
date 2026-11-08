@@ -231,6 +231,65 @@ describe("parseColorset", () => {
     });
   });
 
+  it("prefers an explicit light variant over the one for any appearance", () => {
+    const luminosity = (value: string) => [{ appearance: "luminosity", value }];
+    const json = JSON.stringify({
+      colors: [
+        color({ red: "1.000", green: "1.000", blue: "1.000" }),
+        color({ red: "0xA6", green: "0xA6", blue: "0xA6" }, luminosity("light")),
+        color({ red: "0x76", green: "0x76", blue: "0x76" }, luminosity("dark")),
+      ],
+    });
+    expect(parseColorset(rel, json)).toMatchObject({ light: "#a6a6a6", dark: "#767676" });
+  });
+
+  it("falls back to the colour for any appearance when the light one can't be read, in either order", () => {
+    const unreadable = color({ red: "", green: "", blue: "" }, [
+      { appearance: "luminosity", value: "light" },
+    ]);
+    const anyAppearance = color({ red: "0x10", green: "0x00", blue: "0x00" });
+    for (const colors of [
+      [unreadable, anyAppearance],
+      [anyAppearance, unreadable],
+    ]) {
+      expect(parseColorset(rel, JSON.stringify({ colors }))?.light).toBe("#100000");
+    }
+  });
+
+  it("takes the first readable dark entry, skipping unreadable ones, not the last", () => {
+    const dark = [{ appearance: "luminosity", value: "dark" }];
+    const json = JSON.stringify({
+      colors: [
+        color({ red: "0x10", green: "0x00", blue: "0x00" }),
+        color({ red: "", green: "", blue: "" }, dark),
+        color({ red: "0x20", green: "0x00", blue: "0x00" }, dark),
+        color({ red: "0x40", green: "0x00", blue: "0x00" }, dark),
+      ],
+    });
+    expect(parseColorset(rel, json)).toMatchObject({ light: "#100000", dark: "#200000" });
+  });
+
+  it("falls back to the colour for any appearance when the only dark entry can't be read", () => {
+    const json = JSON.stringify({
+      colors: [
+        color({ red: "0x10", green: "0x00", blue: "0x00" }),
+        color({ red: "0x20", green: "0x00", blue: "0x00" }, [{ appearance: "luminosity", value: "light" }]),
+        color({ red: "", green: "", blue: "" }, [{ appearance: "luminosity", value: "dark" }]),
+      ],
+    });
+    expect(parseColorset(rel, json)).toMatchObject({ light: "#200000", dark: "#100000" });
+  });
+
+  it("shows the colour for any appearance in dark mode when only light is set explicitly", () => {
+    const json = JSON.stringify({
+      colors: [
+        color({ red: "0x10", green: "0x00", blue: "0x00" }),
+        color({ red: "0x20", green: "0x00", blue: "0x00" }, [{ appearance: "luminosity", value: "light" }]),
+      ],
+    });
+    expect(parseColorset(rel, json)).toMatchObject({ light: "#200000", dark: "#100000" });
+  });
+
   it("reads grayscale colours and drops a dark variant equal to light", () => {
     const json = JSON.stringify({
       colors: [
