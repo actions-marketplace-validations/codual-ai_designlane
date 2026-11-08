@@ -188,7 +188,9 @@ describe("scanning a SwiftUI app", () => {
         'import SwiftUI\nlet glass = Color(red: 1, green: 1, blue: 1, opacity: 0.5)\n// let old = Color(hex: "#000000")',
     });
     const colors = (await scanRepo(root)).frameworks[0]?.tokens.colors;
-    expect(colors).toEqual([{ name: "glass", light: "#ffffff80", source: "App/Colors.swift" }]);
+    expect(colors).toEqual([
+      { name: "glass", light: "#ffffff80", source: "App/Colors.swift", kind: "code", uses: 0 },
+    ]);
   });
 
   it("finds generic views and views with several conformances", async () => {
@@ -225,27 +227,56 @@ describe("parseColorset", () => {
       light: "#ff0000",
       dark: "#0000ff",
       source: rel,
+      kind: "asset",
     });
   });
 
   it("reads grayscale colours and drops a dark variant equal to light", () => {
     const json = JSON.stringify({
       colors: [
-        color({ white: "0.5", alpha: "1" }),
-        color({ white: "0.5", alpha: "1" }, [{ appearance: "luminosity", value: "dark" }]),
+        color({ white: "0.5", alpha: "1.000" }),
+        color({ white: "0.5", alpha: "1.000" }, [{ appearance: "luminosity", value: "dark" }]),
       ],
     });
-    expect(parseColorset(rel, json)).toEqual({ name: "Accent", light: "#808080", source: rel });
+    expect(parseColorset(rel, json)).toEqual({
+      name: "Accent",
+      light: "#808080",
+      source: rel,
+      kind: "asset",
+    });
+  });
+
+  it("reads each of Xcode's channel formats: floating point, 8-bit and hexadecimal", () => {
+    const json = (components: Record<string, string>) => JSON.stringify({ colors: [color(components)] });
+    expect(parseColorset(rel, json({ red: "1.000", green: "0.500", blue: "0.000" }))?.light).toBe("#ff8000");
+    expect(parseColorset(rel, json({ red: "255", green: "128", blue: "1" }))?.light).toBe("#ff8001");
+    expect(parseColorset(rel, json({ red: "0xFF", green: "0x80", blue: "0x01" }))?.light).toBe("#ff8001");
+    expect(parseColorset(rel, json({ red: "1.000", green: "1.000", blue: "1.000", alpha: "1" }))?.light).toBe(
+      "#ffffff",
+    );
+    expect(
+      parseColorset(rel, json({ red: "1.000", green: "1.000", blue: "1.000", alpha: "0.500" }))?.light,
+    ).toBe("#ffffff80");
+  });
+
+  it.each(["oops", "", "0x"])("skips a colour whose channel can't be read (%j)", (bad) => {
+    const json = JSON.stringify({ colors: [color({ red: bad, green: "1.000", blue: "1.000" })] });
+    expect(parseColorset(rel, json)).toBeUndefined();
   });
 
   it("ignores high-contrast variants", () => {
     const json = JSON.stringify({
       colors: [
-        color({ red: "1", green: "1", blue: "1" }),
-        color({ red: "0", green: "0", blue: "0" }, [{ appearance: "contrast", value: "high" }]),
+        color({ red: "1.000", green: "1.000", blue: "1.000" }),
+        color({ red: "0.000", green: "0.000", blue: "0.000" }, [{ appearance: "contrast", value: "high" }]),
       ],
     });
-    expect(parseColorset(rel, json)).toEqual({ name: "Accent", light: "#ffffff", source: rel });
+    expect(parseColorset(rel, json)).toEqual({
+      name: "Accent",
+      light: "#ffffff",
+      source: rel,
+      kind: "asset",
+    });
   });
 
   it.each(["not json", '{"colors": "wrong shape"}', '{"colors": []}'])("returns nothing for %j", (text) => {

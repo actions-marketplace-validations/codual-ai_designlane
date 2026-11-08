@@ -1,7 +1,8 @@
-import type { ColorToken } from "./types.js";
+import { byNumber, mostCommon } from "./counting.js";
 
+/** A 0–255 channel as two hex digits; anything that isn't a number reads as 0. */
 const byte = (n: number) =>
-  Math.round(Math.max(0, Math.min(255, n)))
+  Math.round(Number.isFinite(n) ? Math.max(0, Math.min(255, n)) : 0)
     .toString(16)
     .padStart(2, "0");
 
@@ -15,41 +16,20 @@ export function normalizeHex(input: string): string | undefined {
   return `#${hex}`;
 }
 
-/** Channels as 0–1 floats, 0–255 integers or `0x` hex strings, the forms Xcode and Swift code use. */
-export function rgbToHex(r: string | number, g: string | number, b: string | number, a: string | number = 1) {
-  const channel = (v: string | number) => {
-    if (typeof v === "string" && v.startsWith("0x")) return Number.parseInt(v, 16);
-    const n = Number(v);
-    return n <= 1 ? n * 255 : n;
-  };
-  const alpha = Number(a);
-  return `#${byte(channel(r))}${byte(channel(g))}${byte(channel(b))}${alpha >= 1 ? "" : byte(alpha * 255)}`;
+/** Red, green, blue and opacity, each 0–1 (values outside are clamped), as `#rrggbb[aa]`. */
+export function rgbToHex(r: number, g: number, b: number, a = 1): string {
+  return `#${byte(r * 255)}${byte(g * 255)}${byte(b * 255)}${a >= 1 ? "" : byte(a * 255)}`;
 }
 
 /** The most common numbers `pattern` captures across `texts`, for spacing and corner radii. */
-export function commonNumbers(texts: string[], pattern: RegExp, limit = 6): number[] {
-  const counts = new Map<number, number>();
-  for (const text of texts) {
-    for (const m of text.matchAll(pattern)) {
-      const n = Number(m[1]);
-      if (Number.isFinite(n) && n > 0 && n <= 64) counts.set(n, (counts.get(n) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+export function commonNumbers(texts: string[], pattern: RegExp, limit = MAX_SCALE_VALUES): number[] {
+  const values = texts.flatMap((text) => [...text.matchAll(pattern)].map((m) => Number(m[1])));
+  const inRange = values.filter((n) => Number.isFinite(n) && n > 0 && n <= MAX_SCALE_VALUE);
+  return mostCommon(inRange, byNumber)
     .slice(0, limit)
-    .map(([n]) => n);
+    .map(({ value }) => value);
 }
 
-/** The first colour of each name, ignoring case, capped so the list stays small enough to hand an agent. */
-export function dedupeColors(colors: ColorToken[], limit = 40): ColorToken[] {
-  const seen = new Set<string>();
-  return colors
-    .filter((c) => {
-      const key = c.name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, limit);
-}
+/** Spacing and radii above this are layout sizes, not part of a scale. */
+const MAX_SCALE_VALUE = 64;
+const MAX_SCALE_VALUES = 6;

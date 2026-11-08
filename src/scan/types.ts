@@ -16,16 +16,32 @@ export interface ScreenRef {
 }
 
 export interface ColorToken {
+  /** The app's name for it, or its hex value when the code never names it. */
   name: string;
   /** `#rrggbb` or `#rrggbbaa`. */
   light: string;
   dark?: string;
-  /** The file it was found in. */
+  /** The file it was defined in, or first found in. */
   source: string;
+  /** An asset catalog entry, a named constant in code, or a value pasted into the code without a name. */
+  kind: "asset" | "code" | "inline";
+  /** How many places in the code use it, not counting its definition; pasted copies of its value count. */
+  uses: number;
+}
+
+/** A platform colour the app uses (`.red`, `.systemBackground`), which adapts to the platform's own palette. */
+export interface SystemColor {
+  name: string;
+  uses: number;
 }
 
 export interface DesignTokens {
+  /** Most used first. */
   colors: ColorToken[];
+  /** Colours left out of `colors` to keep it short. */
+  colorsOmitted: number;
+  /** Most used first. */
+  systemColors: SystemColor[];
   fonts: string[];
   /** Most common first. */
   spacing: number[];
