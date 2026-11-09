@@ -21,7 +21,7 @@ export function codeOnly(text: string): string {
 }
 
 /** Where the comment or string starting at `i` ends, or undefined when none starts there. */
-function commentOrStringEnd(text: string, i: number): number | undefined {
+export function commentOrStringEnd(text: string, i: number): number | undefined {
   if (text.startsWith("//", i)) return lineCommentEnd(text, i);
   if (text.startsWith("/*", i)) return blockCommentEnd(text, i);
   if (text[i] === '"' || /^#+"/.test(text.slice(i, i + 8))) return stringEnd(text, i);
@@ -49,18 +49,24 @@ function blockCommentEnd(text: string, start: number): number {
   return text.length;
 }
 
-/** Index just past the string literal starting at `start` (plain, multi-line or raw `#"…"#`). */
-function stringEnd(text: string, start: number): number {
+/** Index just past the string literal starting at `start` (plain, multi-line or raw `#"…"#`). An interpolation,
+ * `\(…)`, can hold quotes and brackets of its own, so it's skipped whole. */
+function stringEnd(text: string, start: number, depth = 0): number {
   let hashes = 0;
   while (text[start + hashes] === "#") hashes++;
   const open = start + hashes;
   const multi = text.startsWith('"""', open);
   const quote = multi ? '"""' : '"';
   const closing = quote + "#".repeat(hashes);
+  const escapeMark = `\\${"#".repeat(hashes)}`;
   let j = open + quote.length;
   while (j < text.length) {
-    if (hashes === 0 && text[j] === "\\") {
-      j += 2;
+    if (text.startsWith(escapeMark, j)) {
+      const after = j + escapeMark.length;
+      j =
+        text[after] === "(" && depth < MAX_INTERPOLATION_DEPTH
+          ? interpolationEnd(text, after, depth)
+          : after + 1;
       continue;
     }
     if (!multi && text[j] === "\n") return j;
@@ -70,20 +76,46 @@ function stringEnd(text: string, start: number): number {
   return text.length;
 }
 
+/** Strings inside interpolations nest no deeper than this; deeper, the rest is read as plain text. */
+const MAX_INTERPOLATION_DEPTH = 8;
+
+/** Index just past the `)` closing the interpolation whose `(` is at `open`, skipping strings inside it. */
+function interpolationEnd(text: string, open: number, depth: number): number {
+  let brackets = 0;
+  let j = open;
+  while (j < text.length) {
+    const c = text[j];
+    if (c === "\n") return j;
+    if (c === '"' || (c === "#" && /^#+"/.test(text.slice(j, j + 8)))) {
+      j = stringEnd(text, j, depth + 1);
+      continue;
+    }
+    if (c === "(") brackets++;
+    else if (c === ")" && --brackets === 0) return j + 1;
+    j++;
+  }
+  return text.length;
+}
+
 /** Blanks every `#Preview { … }` block, so views declared inside previews are ignored. */
 export function withoutPreviews(code: string): string {
-  const { nextOpen, closeOf } = braceIndex(code);
   const out = code.split("");
-  let covered = -1;
+  for (const [start, end] of previewRanges(code))
+    for (let k = start; k < end; k++) if (out[k] !== "\n") out[k] = " ";
+  return out.join("");
+}
+
+/** Where each `#Preview { … }` block starts and ends (exclusive), in order, given blanked code (see `codeOnly`). */
+export function previewRanges(code: string): [number, number][] {
+  const { nextOpen, closeOf } = braceIndex(code);
+  const ranges: [number, number][] = [];
   for (const m of code.matchAll(/#Preview\b/g)) {
     const at = m.index ?? 0;
     const open = nextOpen[at] ?? -1;
-    if (at <= covered || open === -1) continue;
-    const close = closeOf.get(open) ?? code.length - 1;
-    for (let k = at; k <= close; k++) if (out[k] !== "\n") out[k] = " ";
-    covered = close;
+    if (at < (ranges.at(-1)?.[1] ?? 0) || open === -1) continue;
+    ranges.push([at, (closeOf.get(open) ?? code.length - 1) + 1]);
   }
-  return out.join("");
+  return ranges;
 }
 
 export interface StructDecl {
