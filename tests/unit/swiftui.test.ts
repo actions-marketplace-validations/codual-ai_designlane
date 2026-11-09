@@ -161,9 +161,11 @@ describe("scanning a SwiftUI app", () => {
         `// ${font("Comic Sans")}`,
         'let failure = Event.custom("PinCreateFailure")',
         'extension Font { static let heading: Font = .custom("Lora-Bold", size: 20) }',
+        "let h = Text(x).font(.heading)",
         'let stacked = UIFont(name: "Lora-Regular_Medium", size: 14)',
         'let wrapped = Text(x).font(.custom("Merriweather",\n  size: 12))',
-        'extension Font { static func body(_ s: CGFloat) -> Font { .custom("Lora", fixedSize: s) } }',
+        'extension Font { static func serif(_ s: CGFloat) -> Font { .custom("Lora", fixedSize: s) } }',
+        "let s = Text(x).font(.serif(14))",
         'let title = UILabel(); title.font = UIFont(name: "Lora-Italic", size: 20)',
       ].join("\n"),
     });

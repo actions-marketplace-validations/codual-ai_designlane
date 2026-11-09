@@ -8,7 +8,7 @@
 import { Reader } from "./swift-expression-reader.js";
 import type { Argument, Expression } from "./swift-expression-types.js";
 import { TYPE_QUALIFIERS } from "./swift-operators.js";
-import { closeOf, type SwiftTokens, type Token } from "./swift-tokens.js";
+import { closeOf, type SwiftTokens, type Token, tokenIndexAt } from "./swift-tokens.js";
 
 export type { Argument, Expression } from "./swift-expression-types.js";
 
@@ -16,7 +16,7 @@ export type { Argument, Expression } from "./swift-expression-types.js";
  * costs at most a fixed number of moves, so to read many calls in one file (every `.font(…)`), read each one's
  * arguments with `argumentsAt`, which stays inside its brackets. */
 export function expressionAt(file: SwiftTokens, offset: number): Expression | undefined {
-  const index = firstTokenAt(file, offset);
+  const index = tokenIndexAt(file, offset);
   if (index === file.tokens.length) return undefined;
   const enclosing = file.enclosing[index] ?? -1;
   const limit = enclosing === -1 ? file.tokens.length : closeOf(file, enclosing);
@@ -25,7 +25,7 @@ export function expressionAt(file: SwiftTokens, offset: number): Expression | un
 
 /** The arguments of the call whose `(` starts at `offset`, or undefined when they can't all be read. */
 export function argumentsAt(file: SwiftTokens, offset: number): Argument[] | undefined {
-  const index = firstTokenAt(file, offset);
+  const index = tokenIndexAt(file, offset);
   // An unclosed `(` has no argument list to finish.
   if (file.tokens[index]?.text !== "(" || file.match[index] === -1) return undefined;
   return new Reader(file, index, file.tokens.length).argumentList(index);
@@ -135,14 +135,3 @@ const continuesLine = (last: Token, next: Token) =>
   last.text === ":" ||
   next.kind === "operator" ||
   next.text === ".";
-
-function firstTokenAt(file: SwiftTokens, offset: number): number {
-  let low = 0;
-  let high = file.tokens.length;
-  while (low < high) {
-    const mid = (low + high) >> 1;
-    if ((file.tokens[mid]?.start ?? 0) < offset) low = mid + 1;
-    else high = mid;
-  }
-  return low;
-}

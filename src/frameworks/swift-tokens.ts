@@ -157,3 +157,15 @@ export function stringValue(literal: string): { value: string; interpolated: boo
   const interpolation = hashes ? new RegExp(String.raw`\\${hashes}\(`) : /(?:^|[^\\])(?:\\\\)*\\\(/;
   return { value: body, interpolated: interpolation.test(body) };
 }
+
+/** The index of the first token starting at or after `offset`, by binary search. */
+export function tokenIndexAt(file: SwiftTokens, offset: number): number {
+  let low = 0;
+  let high = file.tokens.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if ((file.tokens[mid]?.start ?? 0) < offset) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}

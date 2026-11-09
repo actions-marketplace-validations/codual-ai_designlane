@@ -35,6 +35,19 @@ export interface SystemColor {
   uses: number;
 }
 
+/** A text style the app uses, however it was written. */
+export interface TypeStyle {
+  /** A platform text style (`headline`), the app's own helper (`scaledBody`), or a description (`Inter 17 bold`). */
+  name: string;
+  kind: "text-style" | "system" | "custom" | "app";
+  /** `System` for the platform font; empty when the family can't be read (a helper mixing several, or a constant). */
+  family: string;
+  /** In points; text styles at the default text size. Missing when the code computes it. */
+  size?: number;
+  weight: string;
+  uses: number;
+}
+
 export interface DesignTokens {
   /** Most used first. */
   colors: ColorToken[];
@@ -42,6 +55,11 @@ export interface DesignTokens {
   colorsOmitted: number;
   /** Most used first. */
   systemColors: SystemColor[];
+  /** Most used first. */
+  typeStyles: TypeStyle[];
+  /** Text styles left out of `typeStyles` to keep it short. */
+  typeStylesOmitted: number;
+  /** Custom font families: those used, most used first, then those written only in the app's own helpers. */
   fonts: string[];
   /** Most common first. */
   spacing: number[];
