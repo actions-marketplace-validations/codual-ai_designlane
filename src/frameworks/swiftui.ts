@@ -1,6 +1,7 @@
 import type { ViewFacts } from "../scan/classify.js";
 import type { FrameworkPlugin } from "./plugin.js";
 import { lineNumbers, type StructDecl, structs } from "./swift-source.js";
+import { hostedViews } from "./swiftui-hosting.js";
 import { type SwiftSource, swiftSources } from "./swiftui-sources.js";
 import { swiftuiTokens } from "./swiftui-tokens.js";
 import { type ViewUsage, viewUsages } from "./swiftui-usage.js";
@@ -37,7 +38,7 @@ function viewFacts(
       bodyLines: body.split("\n").length,
       presented: usage?.presented ?? false,
       routed: usage?.routed ?? false,
-      childFiles: usage?.childFiles ?? 0,
+      childFiles: usage?.childIn.size ?? 0,
       holdsViews: view.holdsViews,
     };
   });
@@ -64,14 +65,23 @@ export const swiftui: FrameworkPlugin = {
     const sources = await swiftSources(ctx);
     const swiftUI = sources.filter((s) => s.swiftUI);
     if (swiftUI.length === 0) return undefined;
-    return { views: viewsIn(swiftUI), tokens: await swiftuiTokens(ctx, sources) };
+    return { views: viewsIn(swiftUI, sources), tokens: await swiftuiTokens(ctx, sources) };
   },
 };
 
-function viewsIn(sources: SwiftSource[]): ViewFacts[] {
+/** The views declared in the SwiftUI files, with how the app shows them, read from every Swift file. */
+function viewsIn(sources: SwiftSource[], everySource: SwiftSource[]): ViewFacts[] {
   const views = sources.map((s) => structs(s.code).filter(isView));
   const all = views.flat();
+  const names = new Set(all.map((v) => v.name));
   const containers = new Set(all.filter((v) => v.holdsViews).map((v) => v.name));
-  const usages = viewUsages(sources, new Set(all.map((v) => v.name)), containers);
+  const usages = viewUsages(sources, names, containers);
+  // Hosted from UIKit: a page, or part of one, counted like being placed inside another view.
+  for (const { name, file, asPage } of hostedViews(everySource, names, containers)) {
+    const usage = usages.get(name) ?? { presented: false, routed: false, childIn: new Set<string>() };
+    usages.set(name, usage);
+    if (asPage) usage.presented = true;
+    else usage.childIn.add(file);
+  }
   return sources.flatMap((source, i) => viewFacts(source, views[i] ?? [], usages));
 }

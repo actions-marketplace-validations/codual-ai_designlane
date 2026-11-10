@@ -13,8 +13,8 @@ export interface ViewUsage {
   presented: boolean;
   /** Returned from a switch that isn't clearly a navigation router: a weaker sign of a page. */
   routed: boolean;
-  /** Distinct files that place it inside another view. */
-  childFiles: number;
+  /** The files that place it inside another view. */
+  childIn: Set<string>;
 }
 
 /** A navigation router (a switch over a route, tab or destination) must open at least this many views. */
@@ -40,12 +40,11 @@ export function viewUsages(
   const usage = (name: string) => {
     let found = usages.get(name);
     if (!found) {
-      found = { presented: false, routed: false, childFiles: 0 };
+      found = { presented: false, routed: false, childIn: new Set() };
       usages.set(name, found);
     }
     return found;
   };
-  const childFiles = new Map<string, Set<string>>();
   const switches = new Map<string, { inPresenter: boolean; router: boolean; views: Set<string> }>();
   const app = { views, containers };
   for (const { rel, code } of sources) {
@@ -70,7 +69,7 @@ export function viewUsages(
         }
         entry.views.add(name);
       } else if (place.kind === "child") {
-        childFiles.set(name, (childFiles.get(name) ?? new Set()).add(rel));
+        found.childIn.add(rel);
       }
     }
   }
@@ -78,7 +77,6 @@ export function viewUsages(
     if (inPresenter || (router && opened.size >= ROUTER_VIEWS))
       for (const name of opened) usage(name).presented = true;
   }
-  for (const [name, files] of childFiles) usage(name).childFiles = files.size;
   return usages;
 }
 

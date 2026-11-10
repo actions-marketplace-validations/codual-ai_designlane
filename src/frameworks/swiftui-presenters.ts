@@ -35,8 +35,9 @@ const PRESENTING_CLOSURES = new Set([
 const PRESENTING_HELPER = /^[a-z]\w*(?:Sheet|FullScreenCover)$/;
 /** Labelled closures that hold a presenter's content: `StaticConfiguration(…, content: { Widget() })`. */
 const CONTENT_LABELS = new Set(["content", "destination", "detail", "sidebar"]);
-/** Arguments whose value the app opens as a page: `NavigationLink(destination: Page())`. */
-const PRESENTING_ARGUMENTS = new Set(["destination", "rootView"]);
+/** Arguments whose value the app opens as a page: `NavigationLink(destination: Page())`. A hosting controller's
+ * `rootView:` is decided by what hosts it (`swiftui-hosting.ts`). */
+const PRESENTING_ARGUMENTS = new Set(["destination"]);
 /** Containers that don't change what a view is: `case .home: NavigationStack { Home() }`. */
 const TRANSPARENT = new Set(["NavigationStack", "NavigationView", "AnyView", "Group", "ScrollView"]);
 /** Layout containers: a view inside one is part of a larger view, not a page of its own. */
@@ -97,7 +98,7 @@ interface Bracket {
  * no rule matches makes the view a part of whatever owns it. Only a `{` can belong to a switch, a label or a
  * declaration (`ownerOf` reports every `(` as a call), so those rules need no bracket check of their own. */
 const RULES: { means: Step; when: (b: Bracket) => boolean }[] = [
-  // `NavigationLink(destination: Page())`, `UIHostingController(rootView: Page())`
+  // `NavigationLink(destination: Page())`
   {
     means: "presents",
     when: (b) => b.code[b.open] === "(" && PRESENTING_ARGUMENTS.has(argumentLabel(b.code, b.open, b.at)),
