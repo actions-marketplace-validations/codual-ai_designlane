@@ -14,13 +14,16 @@ export interface NamedColor {
   dark?: string;
   /** The file it was defined in. */
   source: string;
+  /** How the code refers to it: `Theme.surface`, `Color("Brand")`. */
+  reference: string;
   kind: "asset" | "code";
 }
 
 export interface ColorFindings {
   named: NamedColor[];
-  /** Each place the code uses a named colour by name (`Color("Brand")`, `.brand`). */
-  references: string[];
+  /** Each place the code uses a named colour: its name, and how the code referred to it when that says which colour
+   * (`Color("Brand")`, `Theme.brand`) rather than just a name (`.brand`). */
+  references: { name: string; reference?: string }[];
   /** Each colour value written without a name, as `#rrggbb[aa]`, with the file it's in. */
   literals: { hex: string; file: string }[];
   /** Each use of a platform colour (`.red`, `.systemBackground`) by name. */
@@ -36,10 +39,18 @@ type Palette = Pick<DesignTokens, "colors" | "colorsOmitted" | "systemColors">;
 
 export function palette(found: ColorFindings): Palette {
   const named = distinctNamed(found.named).map((c): ColorToken => ({ ...c, uses: 0 }));
-  const byName = new Map<string, ColorToken>();
-  for (const color of named) if (!byName.has(nameKey(color.name))) byName.set(nameKey(color.name), color);
-  for (const reference of found.references) {
-    const color = byName.get(nameKey(reference));
+  const byName = new Map<string, ColorToken[]>();
+  for (const color of named) {
+    const sameName = byName.get(nameKey(color.name)) ?? [];
+    byName.set(nameKey(color.name), sameName);
+    sameName.push(color);
+  }
+  const { exact, partial } = referenceIndex(named);
+  for (const { name, reference } of found.references) {
+    // `Theme.surface` names its colour exactly; `Dark.edge` names `Palette.Dark.edge` by its end; a bare `.edge` goes
+    // to the first colour of that name.
+    const meant = reference ? (exact.get(reference) ?? partial.get(reference)) : undefined;
+    const color = meant ?? byName.get(nameKey(name))?.[0];
     if (color) color.uses++;
   }
   const firstFile = new Map<string, string>();
@@ -63,14 +74,33 @@ export function palette(found: ColorFindings): Palette {
   };
 }
 
+/** Each colour by its reference, and by every dotted end of it (`Dark.edge` for `Palette.Dark.edge`), first come
+ * first served, so crediting a use is one lookup however many colours share a name. */
+function referenceIndex(colors: ColorToken[]) {
+  const exact = new Map<string, ColorToken>();
+  const partial = new Map<string, ColorToken>();
+  for (const color of colors) {
+    if (!color.reference) continue;
+    if (!exact.has(color.reference)) exact.set(color.reference, color);
+    // Only a member path (`Palette.Dark.edge`) has ends a use can name; `Color("a.b")` is one name.
+    if (color.reference.includes("(")) continue;
+    const parts = color.reference.split(".");
+    for (let i = 1; i < parts.length - 1; i++) {
+      const end = parts.slice(i).join(".");
+      if (!partial.has(end)) partial.set(end, color);
+    }
+  }
+  return { exact, partial };
+}
+
 /** `Brand`, `brand` and `brand-color` are one name; generated accessors change the case of asset names. */
 export const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/** One entry per name and value: the same name with two values (a light and a dark `bg`) keeps both. */
+/** One entry per reference and value: `Theme.surface` and `Color("surface")` stay two colours even with one value. */
 function distinctNamed(colors: NamedColor[]): NamedColor[] {
   const seen = new Set<string>();
   return colors.filter((c) => {
-    const key = `${nameKey(c.name)}${c.light}`;
+    const key = `${c.reference}|${c.light}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

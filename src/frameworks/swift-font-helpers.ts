@@ -9,10 +9,13 @@ import { COMPUTED, type TypeUse } from "../scan/type-scale.js";
 import { expressionAt } from "./swift-expressions.js";
 import { FONT_TYPES, type FontValue, fontValues } from "./swift-font-reading.js";
 import type { FontSite } from "./swift-font-sites.js";
-import { ownerAt } from "./swift-owners.js";
+import { memberOf, ownerAt, qualifiedOwnerAt } from "./swift-owners.js";
 import { type SwiftTokens, tokenIndexAt } from "./swift-tokens.js";
 
 export type Range = [start: number, end: number];
+
+/** Brackets that open a group inside a parameter list: a default value's call or array, a closure. */
+const NESTED_OPENERS = new Set(["(", "[", "{"]);
 
 export interface FontHelper {
   name: string;
@@ -68,11 +71,16 @@ export function fontHelpers(file: SwiftTokens, sites: FontSite[]): FontHelper[] 
     const sizeParameter = fonts.some(
       (v) => v.sizeFrom !== undefined && declaration.parameters.includes(v.sizeFrom),
     );
+    const isFunction = file.tokens[i + 1]?.text === "func";
+    // `Font.brand(size:)`, how Swift names a function by its argument labels.
+    const labels = declaration.labels.map((label) => `${label}:`).join("");
+    const member = isFunction ? `${declaration.name}(${labels})` : declaration.name;
+    const reference = memberOf(qualifiedOwnerAt(file, i), member);
     helpers.push({
       name: declaration.name,
       owner: ownerAt(file, i),
-      isFunction: file.tokens[i + 1]?.text === "func",
-      font: { ...font, kind: "app", style: declaration.name },
+      isFunction,
+      font: { ...font, kind: "app", style: declaration.name, reference },
       body: declaration.body,
       sizeParameter,
       written: fonts.map(({ font, at }) => ({ font, at })),
@@ -85,18 +93,30 @@ export function fontHelpers(file: SwiftTokens, sites: FontSite[]): FontHelper[] 
 function declarationAt(
   file: SwiftTokens,
   at: number,
-): { name: string; parameters: string[]; body: Range } | undefined {
+): { name: string; parameters: string[]; labels: string[]; body: Range } | undefined {
   const { tokens, match } = file;
   const name = tokens[at];
   if (name?.kind !== "name") return undefined;
   let i = at + 1;
   const parameters: string[] = [];
+  const labels: string[] = [];
   if (tokens[i]?.text === "(") {
     const close = match[i] ?? -1;
     if (close === -1) return undefined;
-    // `(_ size: CGFloat, weight w: Font.Weight)`: the name before each `:` is the one the body uses.
-    for (let k = i + 1; k < close; k++)
-      if (tokens[k + 1]?.text === ":" && tokens[k]?.kind === "name") parameters.push(tokens[k]?.text ?? "");
+    // `(_ size: CGFloat, weight w: Font.Weight)`: the first word of each parameter is how a call labels it, and the
+    // name before its `:` is the one the body uses. Commas inside a group (`[String]`, `Dictionary<String, Int>`, a
+    // default value's call) aren't the list's.
+    for (let k = i + 1, first = true, angles = 0; k < close; k++) {
+      const text = tokens[k]?.text ?? "";
+      if (first) labels.push(text);
+      first = text === "," && angles === 0;
+      if (tokens[k + 1]?.text === ":" && tokens[k]?.kind === "name") parameters.push(text);
+      if (text === "<") angles++;
+      else if (text === ">" && angles > 0) angles--;
+      // A bracket group is skipped whole, and only ever forward: an unmatched one has no end.
+      const end = NESTED_OPENERS.has(text) ? (match[k] ?? -1) : -1;
+      if (end > k) k = end;
+    }
     i = close + 1;
   }
   const typed = tokens[i]?.text === ":" || tokens[i]?.text === "->";
@@ -108,7 +128,7 @@ function declarationAt(
     i++;
   } else if (tokens[i]?.text !== "=" || !FONT_TYPES.has(tokens[i + 1]?.text ?? "")) return undefined;
   const body = bodyAt(file, i);
-  return body && { name: name.text, parameters, body };
+  return body && { name: name.text, parameters, labels, body };
 }
 
 /** A helper's body: its `{ … }`, or the expression after `=`. */

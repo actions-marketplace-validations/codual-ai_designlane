@@ -15,12 +15,16 @@ interface Token {
   $type: string;
   $value: unknown;
   $description?: string;
-  $extensions?: Record<string, unknown>;
+  $extensions?: Extensions;
 }
 
+/** Designmap's own data on a token or group, which DTCG keeps under `$extensions`. */
+type Extensions = { designmap: Record<string, unknown> };
+
 export interface TokenGroup {
-  [key: string]: Token | TokenGroup | string | undefined;
+  [key: string]: Token | TokenGroup | Extensions | string | undefined;
   $description?: string;
+  $extensions?: Extensions;
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -28,6 +32,13 @@ const channel = (hex: string, at: number) => round(Number.parseInt(hex.slice(at,
 /** Sizes are in points; DTCG's nearest unit is px, which is what a point is at 1x. */
 const px = (value: number) => ({ value, unit: "px" });
 const uses = (n: number) => `${n} use${n === 1 ? "" : "s"}`;
+
+/** Where a token comes from, for a tool syncing it elsewhere: how the code refers to it, its file, and its uses. */
+const origin = (token: { reference?: string; source?: string; uses: number }) => ({
+  ...(token.reference ? { reference: token.reference } : {}),
+  ...(token.source ? { source: token.source } : {}),
+  uses: token.uses,
+});
 
 /** `#rrggbb` or `#rrggbbaa` as a DTCG colour. */
 export function colorValue(hex: string): ColorValue {
@@ -45,14 +56,18 @@ function colors(tokens: DesignTokens): TokenGroup {
   const group: TokenGroup = { $description: "Most used first" };
   for (const { color, key } of keyedColors(tokens.colors)) {
     const where = color.kind === "inline" ? "Written without a name in" : "From";
-    const token: Token = {
+    group[key] = {
       $type: "color",
       $value: colorValue(color.light),
       $description: `${where} ${color.source}, ${uses(color.uses)}`,
+      $extensions: {
+        designmap: {
+          ...origin(color),
+          // DTCG has no modes yet, so a dark value rides here.
+          ...(color.dark ? { modes: { dark: colorValue(color.dark) } } : {}),
+        },
+      },
     };
-    // DTCG has no modes yet, so a dark value rides in an extension.
-    if (color.dark) token.$extensions = { designmap: { modes: { dark: colorValue(color.dark) } } };
-    group[key] = token;
   }
   return group;
 }
@@ -66,6 +81,7 @@ function typography(tokens: DesignTokens): TokenGroup {
     if (!fontFamily && fontSize === undefined && fontWeight === undefined) continue;
     group[key] = {
       $description: `${style.name}, ${uses(style.uses)}`,
+      $extensions: { designmap: { name: style.name, ...origin(style) } },
       ...(fontFamily ? { fontFamily: { $type: "fontFamily", $value: fontFamily } } : {}),
       ...(fontSize !== undefined ? { fontSize: { $type: "dimension", $value: px(fontSize) } } : {}),
       ...(fontWeight !== undefined ? { fontWeight: { $type: "fontWeight", $value: fontWeight } } : {}),

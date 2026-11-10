@@ -105,7 +105,14 @@ describe("named colours and references", () => {
       ].join("\n"),
     );
     expect(colors).toEqual([
-      { name: "brand", light: "#3366e6", source: "App/Screen.swift", kind: "code", uses: 3 },
+      {
+        name: "brand",
+        light: "#3366e6",
+        source: "App/Screen.swift",
+        reference: "Color.brand",
+        kind: "code",
+        uses: 3,
+      },
     ]);
   });
 
@@ -204,6 +211,63 @@ describe("colours declared on the app's own type", () => {
     const { colors } = await tokens(code, { "App/Theme.swift": theme });
     return Object.fromEntries(colors.map((c) => [c.name, c.uses]));
   };
+
+  it("keeps same-named colours with one value apart, and credits each use to the colour the code names", async () => {
+    const { colors } = await tokens(
+      ['a.fill(Color("surface"))', "b.fill(Theme.surface)", "c.fill(Theme.surface)"].join("\n"),
+      {
+        "App/Theme.swift":
+          "import SwiftUI\nenum Theme { static let surface = Color(red: 0.1, green: 0.1, blue: 0.1) }",
+        "App/Assets.xcassets/surface.colorset/Contents.json": JSON.stringify({
+          colors: [
+            {
+              color: {
+                "color-space": "srgb",
+                components: { red: "0.1", green: "0.1", blue: "0.1", alpha: "1" },
+              },
+            },
+          ],
+        }),
+      },
+    );
+    expect(Object.fromEntries(colors.map((c) => [c.reference, c.uses]))).toEqual({
+      "Theme.surface": 2,
+      'Color("surface")': 1,
+    });
+  });
+
+  it("credits a use to the colour its reference names exactly, before one whose reference merely ends the same", async () => {
+    const { colors } = await tokens("a.fill(Theme.surface)\nb.fill(Dark.edge)", {
+      "App/Other.swift": [
+        "import SwiftUI",
+        "enum Other { enum Theme { static let surface = Color(red: 0.2, green: 0.2, blue: 0.2) } }",
+        "enum Palette { enum Dark { static let edge = Color(red: 0.4, green: 0.4, blue: 0.4) } }",
+      ].join("\n"),
+      "App/Theme.swift":
+        "import SwiftUI\nenum Theme { static let surface = Color(red: 0.1, green: 0.1, blue: 0.1) }",
+    });
+    expect(Object.fromEntries(colors.map((c) => [c.reference, c.uses]))).toEqual({
+      "Theme.surface": 1,
+      "Other.Theme.surface": 0,
+      "Palette.Dark.edge": 1,
+    });
+  });
+
+  it("records a colour's full reference through nested types and an extension of one", async () => {
+    const { colors } = await tokens("", {
+      "App/Theme.swift": [
+        "import SwiftUI",
+        "enum Palette { enum Dark { static let edge = Color(red: 0.3, green: 0.3, blue: 0.3) } }",
+        "extension Palette.Dark { static let glow = Color(red: 0.9, green: 0.5, blue: 0.1) }",
+        "extension SwiftUI.Color { static let ink = Color(red: 0.1, green: 0.1, blue: 0.1) }",
+      ].join("\n"),
+    });
+    expect(Object.fromEntries(colors.map((c) => [c.name, c.reference]))).toEqual({
+      edge: "Palette.Dark.edge",
+      glow: "Palette.Dark.glow",
+      ink: "Color.ink",
+    });
+  });
 
   it("counts a colour on a nested type, and Self.base inside its own type", async () => {
     expect(await uses("x(Theme.Dark.edge)\ny(Dark.edge)")).toMatchObject({ edge: 2, base: 1 });
@@ -340,6 +404,21 @@ describe("hostile input", () => {
       ...inFiles(used, 5000),
     });
     expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it("stays fast crediting thousands of qualified uses among thousands of same-named colours", async () => {
+    const owners = Array.from(
+      { length: 3_000 },
+      (_, i) => `enum T${i} { static let c = Color(red: 0.1, green: 0.1, blue: 0.1) }`,
+    );
+    const uses = Array.from({ length: 3_000 }, () => "x(T2999.c)");
+    const started = performance.now();
+    const { colors } = await tokens("", {
+      "App/Theme.swift": `import SwiftUI\n${owners.join("\n")}`,
+      ...inFiles(uses, 3000),
+    });
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(colors.find((c) => c.reference === "T2999.c")?.uses).toBe(3_000);
   });
 
   it("stays fast on long chains of type names and deep blocks full of Self", async () => {

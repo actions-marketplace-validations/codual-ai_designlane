@@ -14,6 +14,8 @@ export interface TypeUse {
   size?: number;
   weight: string;
   style?: string;
+  /** The app's own helper the code calls for it: `Font.brandTitle`. */
+  reference?: string;
   /** Where the code sets it, when known: the file, and the 1-based line. */
   file?: string;
   line?: number;
@@ -47,8 +49,9 @@ export function typeScale({ uses, helperFonts }: TypeFindings): TypeScale {
       family: family(use.family),
       ...(use.size === undefined ? {} : { size: use.size }),
       weight: use.weight,
+      ...(use.reference ? { reference: use.reference } : {}),
     };
-    const key = [style.kind, style.name, style.family, style.size, style.weight].join("|");
+    const key = [style.kind, style.name, style.family, style.size, style.weight, style.reference].join("|");
     const found = merged.get(key);
     if (found) found.uses++;
     else merged.set(key, { ...style, uses: 1 });

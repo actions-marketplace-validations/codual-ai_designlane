@@ -769,3 +769,13 @@ describe("helpers in this rebuild's reviews", () => {
     ]);
   });
 });
+
+describe("font helpers on broken code", () => {
+  it("finishes on unmatched brackets in a helper's parameters", async () => {
+    const code =
+      "import SwiftUI\nlet x = [1\nextension Font {\n static func brand(a: [Int, b: [String) -> Font { .system(size: 1) }\n}";
+    const started = performance.now();
+    await scanRepo(await tempDir({ "App/Fonts.swift": code }));
+    expect(performance.now() - started).toBeLessThan(5_000);
+  }, 10_000);
+});

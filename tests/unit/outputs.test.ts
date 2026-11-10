@@ -125,22 +125,99 @@ describe("tokens.json", () => {
     expect(toDesignMd(scan)).toContain("smallest first: 0.5px, 8px, 16px.");
   });
 
-  it("gives two names that read the same, and a dark value's name, their own keys", () => {
+  it("names same-named colours by how the code refers to each, so none overwrites another", () => {
     const scan = scanOf([
-      { name: "a.b", light: "#111111", dark: "#222222" },
-      { name: "a-b", light: "#333333" },
-      { name: "a-b-dark", light: "#444444" },
+      { name: "surface", light: "#111111", dark: "#222222", reference: "Theme.surface" },
+      {
+        name: "surface",
+        light: "#333333",
+        source: "Assets.xcassets/surface",
+        kind: "asset",
+        reference: 'Color("surface")',
+      },
+      { name: "surface-dark", light: "#444444", reference: "Theme.surfaceDark" },
     ]);
-    expect(ownKeys(toDesignTokens(scan).color)).toEqual(["a-b", "a-b-2", "a-b-dark"]);
+    expect(ownKeys(toDesignTokens(scan).color)).toEqual(["Theme-surface", "Color-surface", "surface-dark"]);
     const front = toDesignMd(scan).split("---")[1] ?? "";
-    for (const line of [
-      'a-b: "#111111"',
-      'a-b-2: "#333333"',
-      'a-b-dark: "#444444"',
-      'a-b-dark-2: "#222222"',
-    ]) {
+    for (const line of ['Theme-surface: "#111111"', 'Color-surface: "#333333"', 'surface-dark: "#444444"']) {
       expect(front).toContain(line);
     }
+    expect(front).toContain('Theme-surface-dark: "#222222"');
+  });
+});
+
+describe("tokens.json for syncing", () => {
+  it("records how the code refers to each colour and text style, where it's from, and its uses", async () => {
+    const tokens = toDesignTokens(await shop());
+    const color = tokens.color as Record<string, { $extensions: unknown }>;
+    expect(color.brand?.$extensions).toEqual({
+      designmap: { reference: "Theme.brand", source: "Shop/Theme.swift", uses: 3 },
+    });
+    expect(color["hex-ff0000"]?.$extensions).toEqual({ designmap: { source: "Shop/Home.swift", uses: 1 } });
+    expect((tokens.typography as Record<string, { $extensions: unknown }>).heading?.$extensions).toEqual({
+      designmap: { name: "heading", reference: "Font.heading", uses: 1 },
+    });
+  });
+
+  it("names a font helper function by its argument labels, as Swift does", async () => {
+    const root = await tempDir({
+      "App/Fonts.swift": [
+        "import SwiftUI",
+        "extension Font {",
+        '  static func brand(size: CGFloat, weight w: Font.Weight = .bold, tags: [String] = ["a", "b"], options: Dictionary<String, Int> = [:]) -> Font {',
+        "    .system(size: size, weight: w)",
+        "  }",
+        "  static func caption(_ size: CGFloat) -> Font { .system(size: size) }",
+        "}",
+      ].join("\n"),
+      "App/Home.swift":
+        "import SwiftUI\nstruct Home: View { var body: some View { Text(t).font(.brand(size: 20)).font(.caption(12)) } }",
+    });
+    const { typeStyles } = (await scanRepo(root)).frameworks[0]?.tokens ?? { typeStyles: [] };
+    expect(typeStyles.map((s) => s.reference).sort()).toEqual([
+      "Font.brand(size:weight:tags:options:)",
+      "Font.caption(_:)",
+    ]);
+  });
+
+  it("records a font helper's full reference through nested types", async () => {
+    const root = await tempDir({
+      "App/Fonts.swift":
+        "import SwiftUI\nenum Fonts { enum Brand { static let heading = Font.system(size: 22, weight: .bold) } }",
+      "App/Home.swift":
+        "import SwiftUI\nstruct Home: View { var body: some View { Text(t).font(Fonts.Brand.heading) } }",
+    });
+    const { typeStyles } = (await scanRepo(root)).frameworks[0]?.tokens ?? { typeStyles: [] };
+    expect(typeStyles.find((s) => s.name === "heading")?.reference).toBe("Fonts.Brand.heading");
+  });
+
+  it("keeps each token's key when the ranking changes, so a sync updates it rather than replacing it", () => {
+    const sameName = [
+      { name: "brand", light: "#111111", dark: "#222222", source: "A.swift", reference: "brand" },
+      { name: "brand", light: "#333333", dark: "#444444", source: "B.swift", reference: "brand" },
+      { name: "surface", light: "#555555", reference: "Theme.surface" },
+      { name: "surface", light: "#666666", reference: 'Color("surface")' },
+    ];
+    const ranked = (order: number[]) => scanOf(order.map((i, rank) => ({ ...sameName[i], uses: 10 - rank })));
+    const keysByValue = (scan: ScanResult) => {
+      const color = toDesignTokens(scan).color as Record<string, { $value: { hex: string } }>;
+      const light = ownKeys(color).map((k) => [color[k]?.$value.hex, k]);
+      const dark = [...(toDesignMd(scan).matchAll(/^ {2}([\w-]+-dark): "(#\w+)"$/gm) ?? [])].map((m) => [
+        m[2],
+        m[1],
+      ]);
+      return Object.fromEntries([...light, ...dark]);
+    };
+    const before = keysByValue(ranked([0, 1, 2, 3]));
+    expect(before).toEqual({
+      "#111111": "brand",
+      "#222222": "brand-dark",
+      "#333333": "brand-2",
+      "#444444": "brand-2-dark",
+      "#555555": "Theme-surface",
+      "#666666": "Color-surface",
+    });
+    expect(keysByValue(ranked([3, 2, 1, 0]))).toEqual(before);
   });
 });
 
@@ -164,7 +241,7 @@ describe("DESIGN.md", () => {
 
   it("states use counts and sources in the prose, with sections in the format's order", async () => {
     const md = toDesignMd(await shop());
-    expect(md).toContain("- **brand** `#3366e6`: 3 uses, from `Shop/Theme.swift`.");
+    expect(md).toContain("- **brand** `#3366e6`: 3 uses, from `Shop/Theme.swift` as `Theme.brand`.");
     expect(md).toContain(
       "- **hex-ff0000** `#ff0000`: 1 use, written without a name, first in `Shop/Home.swift`.",
     );

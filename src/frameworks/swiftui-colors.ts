@@ -1,6 +1,6 @@
 import { type ColorFindings, type NamedColor, nameKey } from "../scan/palette.js";
 import { normalizeHex, rgbToHex } from "../scan/tokens.js";
-import { ownerAt } from "./swift-owners.js";
+import { memberOf, ownerAt, qualifiedOwnerAt } from "./swift-owners.js";
 import { tokenIndexAt } from "./swift-tokens.js";
 import { matchesInCode, matchesPerLine, type SwiftSource, tokensOf } from "./swiftui-sources.js";
 
@@ -120,16 +120,24 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
         found.literals.push({ hex, file: source.rel });
         continue;
       }
-      found.named.push({ name, light: hex, source: source.rel, kind: "code" });
-      if (!declared[1]) continue;
-      typeMembers.add(nameKey(name));
-      const tokens = tokensOf(source);
-      const owner = ownerAt(tokens, tokenIndexAt(tokens, start));
-      if (owner) owners.set(owner, (owners.get(owner) ?? new Set()).add(nameKey(name)));
+      let reference = name;
+      if (declared[1]) {
+        typeMembers.add(nameKey(name));
+        const tokens = tokensOf(source);
+        const at = tokenIndexAt(tokens, start);
+        const owner = ownerAt(tokens, at);
+        if (owner) owners.set(owner, (owners.get(owner) ?? new Set()).add(nameKey(name)));
+        reference = memberOf(qualifiedOwnerAt(tokens, at), name);
+      }
+      found.named.push({ name, light: hex, source: source.rel, reference, kind: "code" });
     }
-    for (const { m } of matchesPerLine(source, ASSET_REFERENCE)) found.references.push(m[1] ?? "");
-    for (const { m } of matchesPerLine(source, GENERATED_REFERENCE))
-      found.references.push(generatedName(m[1] ?? ""));
+    for (const { m } of matchesPerLine(source, ASSET_REFERENCE)) {
+      const name = m[1] ?? "";
+      found.references.push({ name, reference: `Color("${name}")` });
+    }
+    for (const { m } of matchesPerLine(source, GENERATED_REFERENCE)) {
+      found.references.push({ name: generatedName(m[1] ?? "") });
+    }
   }
   // A colour declared on a type takes over a platform one (`static let primary` makes `.primary` the app's); a
   // local variable or an asset doesn't: Xcode generates no symbol for an asset named like a platform colour, except
@@ -146,12 +154,14 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
         const tokens = tokensOf(source);
         owner = ownerAt(tokens, tokenIndexAt(tokens, m.index ?? 0));
       }
-      if (!COLOR_TYPES.has(owner) && owners.get(owner)?.has(nameKey(name))) found.references.push(name);
+      if (!COLOR_TYPES.has(owner) && owners.get(owner)?.has(nameKey(name))) {
+        found.references.push({ name, reference: memberOf(owner, name) });
+      }
     }
     for (const name of colorNames(source)) {
       const key = nameKey(name);
       if (appNames.has(key) && (!isSystem(name) || takesOver(name, key))) {
-        found.references.push(name);
+        found.references.push({ name });
       } else if (isSystem(name)) {
         found.system.push(name);
       }

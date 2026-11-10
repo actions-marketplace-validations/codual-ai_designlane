@@ -76,6 +76,7 @@ export function parseColorset(rel: string, text: string | undefined): NamedColor
     light,
     ...(darkMode && darkMode !== light ? { dark: darkMode } : {}),
     source: rel,
+    reference: `Color("${name}")`,
     kind: "asset",
   };
 }

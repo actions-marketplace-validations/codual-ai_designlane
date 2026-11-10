@@ -62,8 +62,11 @@ function colorPart(frameworks: FrameworkScan[], prefix: Prefix): Part {
       tokens[key] = c.light;
       if (darkKey) tokens[`${prefix(f)}${darkKey}`] = c.dark ?? "";
       const where = c.kind === "inline" ? "written without a name, first in" : "from";
+      const referredTo = c.reference ? ` as \`${c.reference}\`` : "";
       const dark = darkKey ? ` (dark \`${c.dark}\`, as ${prefix(f)}${darkKey})` : "";
-      prose.push(`- **${key}** \`${c.light}\`${dark}: ${plural(c.uses, "use")}, ${where} \`${c.source}\`.`);
+      prose.push(
+        `- **${key}** \`${c.light}\`${dark}: ${plural(c.uses, "use")}, ${where} \`${c.source}\`${referredTo}.`,
+      );
     }
     const { colorsOmitted, systemColors } = f.tokens;
     if (colorsOmitted) prose.push(`- ${plural(colorsOmitted, "less used colour")} left out.`);
@@ -99,7 +102,8 @@ function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
         ...(fontWeight !== undefined ? { fontWeight } : {}),
       };
       const value = [fontFamily, fontSize !== undefined && px(fontSize), weightLabel(style.weight)];
-      prose.push(`- **${key}** (${value.filter(Boolean).join(" ")}): ${plural(style.uses, "use")}.`);
+      const via = style.reference ? `, as \`${style.reference}\`` : "";
+      prose.push(`- **${key}** (${value.filter(Boolean).join(" ")}): ${plural(style.uses, "use")}${via}.`);
     }
     if (f.tokens.typeStylesOmitted) {
       prose.push(`- ${plural(f.tokens.typeStylesOmitted, "less used style")} left out.`);

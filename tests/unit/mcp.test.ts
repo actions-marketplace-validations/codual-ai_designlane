@@ -49,7 +49,7 @@ describe("MCP server", () => {
     const { text, isError } = await call(await connect(await tempDir(APP)), "get_design_system");
     expect(isError).toBe(false);
     expect(text).toContain('  brand: "#3366e6"');
-    expect(text).toContain("- **brand** `#3366e6`: 1 use, from `App/Theme.swift`.");
+    expect(text).toContain("- **brand** `#3366e6`: 1 use, from `App/Theme.swift` as `Theme.brand`.");
   });
 
   it("finds views by part of a name or by kind, with where each is", async () => {

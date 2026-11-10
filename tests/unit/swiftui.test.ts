@@ -191,7 +191,14 @@ describe("scanning a SwiftUI app", () => {
     });
     const colors = (await scanRepo(root)).frameworks[0]?.tokens.colors;
     expect(colors).toEqual([
-      { name: "glass", light: "#ffffff80", source: "App/Colors.swift", kind: "code", uses: 0 },
+      {
+        name: "glass",
+        light: "#ffffff80",
+        source: "App/Colors.swift",
+        reference: "glass",
+        kind: "code",
+        uses: 0,
+      },
     ]);
   });
 
@@ -229,6 +236,7 @@ describe("parseColorset", () => {
       light: "#ff0000",
       dark: "#0000ff",
       source: rel,
+      reference: 'Color("Accent")',
       kind: "asset",
     });
   });
@@ -303,6 +311,7 @@ describe("parseColorset", () => {
       name: "Accent",
       light: "#808080",
       source: rel,
+      reference: 'Color("Accent")',
       kind: "asset",
     });
   });
@@ -336,6 +345,7 @@ describe("parseColorset", () => {
       name: "Accent",
       light: "#ffffff",
       source: rel,
+      reference: 'Color("Accent")',
       kind: "asset",
     });
   });

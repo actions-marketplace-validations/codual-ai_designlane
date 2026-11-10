@@ -25,10 +25,45 @@ export interface KeyedColor {
   darkKey?: string;
 }
 
+/** Code-unit order, the same on every machine (unlike `localeCompare`, which follows the system's language). */
+const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Each item with its key: its own name, or, when several items share one, the way the code refers to each
+ * (`Theme-surface`, `Color-surface`). Suffixes go out in an order fixed by the items themselves (`identity`), so the
+ * same code gives the same keys on every machine and in every ranking.
+ */
+function keysOf<T>(
+  items: T[],
+  name: (item: T) => string,
+  reference: (item: T) => string,
+  identity: (item: T) => string,
+  taken: Set<string>,
+) {
+  const shared = new Map<string, number>();
+  for (const item of items) shared.set(name(item), (shared.get(name(item)) ?? 0) + 1);
+  const wanted = (item: T) => ((shared.get(name(item)) ?? 0) > 1 ? tokenKey(reference(item)) : name(item));
+  const order = items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => byCode(wanted(a.item), wanted(b.item)) || byCode(identity(a.item), identity(b.item)));
+  const keyed: { item: T; key: string }[] = [];
+  for (const { item, index } of order) keyed[index] = { item, key: claim(taken, wanted(item)) };
+  return keyed;
+}
+
 export function keyedColors(colors: ColorToken[]): KeyedColor[] {
   const taken = new Set<string>();
-  const keyed = colors.map((color) => ({ color, key: claim(taken, tokenKey(color.name)) }));
-  return keyed.map((k) => (k.color.dark ? { ...k, darkKey: claim(taken, `${k.key}-dark`) } : k));
+  const reference = (c: ColorToken) => c.reference ?? c.name;
+  const identity = (c: ColorToken) => `${reference(c)}|${c.source}|${c.light}`;
+  const keyed = keysOf(colors, (c) => tokenKey(c.name), reference, identity, taken);
+  // A dark key is its colour's key, already unique, plus `-dark`; claimed after every light key, it gets a suffix
+  // only when the app has a colour named that already.
+  const withDark = keyed.filter(({ item }) => item.dark);
+  const darkKeys = new Map(withDark.map(({ item, key }) => [item, claim(taken, `${key}-dark`)]));
+  return keyed.map(({ item: color, key }) => {
+    const darkKey = darkKeys.get(color);
+    return { color, key, ...(darkKey ? { darkKey } : {}) };
+  });
 }
 
 /** A text style's values that the code sets: a size or weight it computes is left out. */
@@ -71,8 +106,9 @@ function typeStyleKey(style: TypeStyle): string {
 }
 
 export function keyedStyles(styles: TypeStyle[]): KeyedStyle[] {
-  const taken = new Set<string>();
-  return styles.map((style) => {
+  const reference = (s: TypeStyle) => s.reference ?? s.name;
+  const identity = (s: TypeStyle) => `${reference(s)}|${s.name}`;
+  return keysOf(styles, typeStyleKey, reference, identity, new Set()).map(({ item: style, key }) => {
     const weight = WEIGHT_NUMBERS[style.weight];
     // The platform font on Apple platforms is SF Pro; an empty family (a helper mixing several) has none.
     const family = style.family === "System" ? "SF Pro" : style.family;
@@ -81,7 +117,7 @@ export function keyedStyles(styles: TypeStyle[]): KeyedStyle[] {
       ...(style.size !== undefined ? { fontSize: style.size } : {}),
       ...(weight !== undefined ? { fontWeight: weight } : {}),
     };
-    return { style, key: claim(taken, typeStyleKey(style)), values };
+    return { style, key, values };
   });
 }
 

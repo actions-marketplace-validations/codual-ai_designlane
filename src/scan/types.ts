@@ -23,6 +23,8 @@ export interface ColorToken {
   dark?: string;
   /** The file it was defined in, or first found in. */
   source: string;
+  /** How the code refers to it (`Theme.surface`, `Color("Brand")`); missing for a value written without a name. */
+  reference?: string;
   /** An asset catalog entry, a named constant in code, or a value pasted into the code without a name. */
   kind: "asset" | "code" | "inline";
   /** How many places in the code use it, not counting its definition; pasted copies of its value count. */
@@ -45,6 +47,8 @@ export interface TypeStyle {
   /** In points; text styles at the default text size. Missing when the code computes it. */
   size?: number;
   weight: string;
+  /** The app's own helper the code calls for it (`Font.brandTitle`); missing for a font written in place. */
+  reference?: string;
   uses: number;
 }
 
