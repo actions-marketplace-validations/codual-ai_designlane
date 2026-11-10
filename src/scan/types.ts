@@ -25,6 +25,8 @@ export interface ColorToken {
   source: string;
   /** How the code refers to it (`Theme.surface`, `Color("Brand")`); missing for a value written without a name. */
   reference?: string;
+  /** The line it's declared on, for a colour declared in code. */
+  line?: number;
   /** An asset catalog entry, a named constant in code, or a value pasted into the code without a name. */
   kind: "asset" | "code" | "inline";
   /** How many places in the code use it, not counting its definition; pasted copies of its value count. */
@@ -53,21 +55,17 @@ export interface TypeStyle {
 }
 
 export interface DesignTokens {
-  /** Most used first. */
+  /** Every colour, most used first. */
   colors: ColorToken[];
-  /** Colours left out of `colors` to keep it short. */
-  colorsOmitted: number;
   /** Most used first. */
   systemColors: SystemColor[];
-  /** Most used first. */
+  /** Every text style, most used first. */
   typeStyles: TypeStyle[];
-  /** Text styles left out of `typeStyles` to keep it short. */
-  typeStylesOmitted: number;
   /** Custom font families: those used, most used first, then those written only in the app's own helpers. */
   fonts: string[];
-  /** Most common first. */
+  /** Every spacing value, most common first. */
   spacing: number[];
-  /** Most common first. */
+  /** Every corner radius, most common first. */
   radii: number[];
 }
 

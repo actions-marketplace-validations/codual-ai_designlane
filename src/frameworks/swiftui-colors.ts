@@ -1,6 +1,7 @@
 import { type ColorFindings, type NamedColor, nameKey } from "../scan/palette.js";
 import { normalizeHex, rgbToHex } from "../scan/tokens.js";
 import { memberOf, ownerAt, qualifiedOwnerAt } from "./swift-owners.js";
+import { lineNumbers } from "./swift-source.js";
 import { tokenIndexAt } from "./swift-tokens.js";
 import { matchesInCode, matchesPerLine, type SwiftSource, tokensOf } from "./swiftui-sources.js";
 
@@ -111,6 +112,7 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
   const typeMembers = new Set<string>();
   const owners = new Map<string, Set<string>>();
   for (const source of sources) {
+    const declaredHere: { color: NamedColor; start: number }[] = [];
     for (const { hex, prefix, isInit, start } of literals(source, opacityFirst)) {
       const declared = DECLARED.exec(prefix);
       // `.init(red: …)` is only a colour when declared as one: `let ink: Color = .init(…)`.
@@ -129,8 +131,15 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
         if (owner) owners.set(owner, (owners.get(owner) ?? new Set()).add(nameKey(name)));
         reference = memberOf(qualifiedOwnerAt(tokens, at), name);
       }
-      found.named.push({ name, light: hex, source: source.rel, reference, kind: "code" });
+      declaredHere.push({ color: { name, light: hex, source: source.rel, reference, kind: "code" }, start });
     }
+    // The line each colour is declared on, which orders same-named ones in a file by declaration, not by value.
+    declaredHere.sort((a, b) => a.start - b.start);
+    const lines = lineNumbers(
+      source.text,
+      declaredHere.map((d) => d.start),
+    );
+    for (const [i, { color }] of declaredHere.entries()) found.named.push({ ...color, line: lines[i] ?? 1 });
     for (const { m } of matchesPerLine(source, ASSET_REFERENCE)) {
       const name = m[1] ?? "";
       found.references.push({ name, reference: `Color("${name}")` });

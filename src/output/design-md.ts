@@ -10,6 +10,8 @@ import type { FrameworkScan, ScanResult } from "../scan/types.js";
 import { dimensionKey, keyedColors, keyedStyles } from "./token-names.js";
 
 const FRAMEWORK_NAMES = { swiftui: "SwiftUI" } as const;
+/** How many colours and text styles are described one per line; the rest follow briefly. */
+const MOST_USED_LISTED = 12;
 /** How many screens and components the overview names; the rest are counted. */
 const MAX_VIEWS_NAMED = 30;
 /** Colour names that say which colour is the app's own: the format asks for a `primary`, which points at one of
@@ -53,10 +55,29 @@ interface Part {
 
 type Prefix = (f: FrameworkScan) => string;
 
+/** A value listed in prose: in full among the most used, or briefly among the rest. */
+interface Listed {
+  detailed: string;
+  brief: string;
+}
+
+/** The most used values one per line, then every other one briefly, so nothing is left out and the system the app
+ * leans on still stands out from its one-offs. */
+function mostUsedThenTheRest(lines: Listed[], one: string, many: string): string[] {
+  const rest = lines.slice(MOST_USED_LISTED);
+  const top = lines.slice(0, MOST_USED_LISTED).map((line) => line.detailed);
+  if (!rest.length) return top;
+  return [
+    ...top,
+    `\nAlso used, ${plural(rest.length, `more ${one}`, `more ${many}`)}: ${rest.map((line) => line.brief).join(", ")}.`,
+  ];
+}
+
 function colorPart(frameworks: FrameworkScan[], prefix: Prefix): Part {
   const tokens: Yaml = {};
   const prose: string[] = [];
   for (const f of frameworks) {
+    const lines: Listed[] = [];
     for (const { color: c, key: own, darkKey } of keyedColors(f.tokens.colors)) {
       const key = `${prefix(f)}${own}`;
       tokens[key] = c.light;
@@ -64,12 +85,13 @@ function colorPart(frameworks: FrameworkScan[], prefix: Prefix): Part {
       const where = c.kind === "inline" ? "written without a name, first in" : "from";
       const referredTo = c.reference ? ` as \`${c.reference}\`` : "";
       const dark = darkKey ? ` (dark \`${c.dark}\`, as ${prefix(f)}${darkKey})` : "";
-      prose.push(
-        `- **${key}** \`${c.light}\`${dark}: ${plural(c.uses, "use")}, ${where} \`${c.source}\`${referredTo}.`,
-      );
+      lines.push({
+        detailed: `- **${key}** \`${c.light}\`${dark}: ${plural(c.uses, "use")}, ${where} \`${c.source}\`${referredTo}.`,
+        brief: `${key} \`${c.light}\` ×${c.uses}`,
+      });
     }
-    const { colorsOmitted, systemColors } = f.tokens;
-    if (colorsOmitted) prose.push(`- ${plural(colorsOmitted, "less used colour")} left out.`);
+    prose.push(...mostUsedThenTheRest(lines, "colour", "colours"));
+    const { systemColors } = f.tokens;
     if (systemColors.length) {
       const list = systemColors.map((s) => `${s.name} (${s.uses})`).join(", ");
       prose.push(`\nPlatform colours, which follow the system's own palette: ${list}.`);
@@ -89,6 +111,7 @@ function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
   const prose: string[] = [];
   const computed: string[] = [];
   for (const f of frameworks) {
+    const lines: Listed[] = [];
     for (const { style, key: own, values } of keyedStyles(f.tokens.typeStyles)) {
       const key = `${prefix(f)}${own}`;
       const { fontFamily, fontSize, fontWeight } = values;
@@ -103,11 +126,13 @@ function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
       };
       const value = [fontFamily, fontSize !== undefined && px(fontSize), weightLabel(style.weight)];
       const via = style.reference ? `, as \`${style.reference}\`` : "";
-      prose.push(`- **${key}** (${value.filter(Boolean).join(" ")}): ${plural(style.uses, "use")}${via}.`);
+      const described = value.filter(Boolean).join(" ");
+      lines.push({
+        detailed: `- **${key}** (${described}): ${plural(style.uses, "use")}${via}.`,
+        brief: `${key} (${described}) ×${style.uses}`,
+      });
     }
-    if (f.tokens.typeStylesOmitted) {
-      prose.push(`- ${plural(f.tokens.typeStylesOmitted, "less used style")} left out.`);
-    }
+    prose.push(...mostUsedThenTheRest(lines, "text style", "text styles"));
     if (f.tokens.fonts.length) prose.push(`\nCustom font families: ${f.tokens.fonts.join(", ")}.`);
   }
   if (computed.length)
@@ -161,11 +186,11 @@ export function toDesignMd(scan: ScanResult): string {
   if (type.prose.length) sections.push(`## Typography\n\n${type.prose.join("\n")}`);
   if (Object.keys(spacing).length) {
     const values = Object.values(spacing).join(", ");
-    sections.push(`## Layout\n\nThe UI code's most common spacing values, smallest first: ${values}.`);
+    sections.push(`## Layout\n\nEvery spacing value the UI code uses, smallest first: ${values}.`);
   }
   if (Object.keys(rounded).length) {
     const values = Object.values(rounded).join(", ");
-    sections.push(`## Shapes\n\nThe UI code's most common corner radii, smallest first: ${values}.`);
+    sections.push(`## Shapes\n\nEvery corner radius the UI code uses, smallest first: ${values}.`);
   }
   return `${sections.join("\n\n")}\n`;
 }

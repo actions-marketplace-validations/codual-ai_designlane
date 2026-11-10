@@ -32,12 +32,7 @@ export interface TypeFindings {
   helperFonts: TypeUse[];
 }
 
-/** The scale stops here so it stays readable; the rest is counted, not dropped silently. */
-const MAX_TYPE_STYLES = 20;
-/** Font families listed, most used first. */
-const MAX_FONTS = 6;
-
-type TypeScale = Pick<DesignTokens, "typeStyles" | "typeStylesOmitted" | "fonts">;
+type TypeScale = Pick<DesignTokens, "typeStyles" | "fonts">;
 
 export function typeScale({ uses, helperFonts }: TypeFindings): TypeScale {
   const family = canonicalFamilies([...uses, ...helperFonts]);
@@ -62,9 +57,8 @@ export function typeScale({ uses, helperFonts }: TypeFindings): TypeScale {
   const used = mostCommon(custom, byText).map(({ value }) => value);
   const inHelpers = helperFonts.filter((f) => isCustom(f.family)).map((f) => family(f.family));
   return {
-    typeStyles: ranked.slice(0, MAX_TYPE_STYLES),
-    typeStylesOmitted: Math.max(0, ranked.length - MAX_TYPE_STYLES),
-    fonts: [...new Set([...used, ...inHelpers])].slice(0, MAX_FONTS),
+    typeStyles: ranked,
+    fonts: [...new Set([...used, ...inHelpers])],
   };
 }
 

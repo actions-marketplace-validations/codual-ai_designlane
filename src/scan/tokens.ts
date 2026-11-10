@@ -21,15 +21,9 @@ export function rgbToHex(r: number, g: number, b: number, a = 1): string {
   return `#${byte(r * 255)}${byte(g * 255)}${byte(b * 255)}${a >= 1 ? "" : byte(a * 255)}`;
 }
 
-/** The most common numbers `pattern` captures across `texts`, for spacing and corner radii. */
-export function commonNumbers(texts: string[], pattern: RegExp, limit = MAX_SCALE_VALUES): number[] {
+/** The numbers `pattern` captures across `texts`, most common first, for spacing and corner radii. */
+export function numbersByFrequency(texts: string[], pattern: RegExp): number[] {
   const values = texts.flatMap((text) => [...text.matchAll(pattern)].map((m) => Number(m[1])));
-  const inRange = values.filter((n) => Number.isFinite(n) && n > 0 && n <= MAX_SCALE_VALUE);
-  return mostCommon(inRange, byNumber)
-    .slice(0, limit)
-    .map(({ value }) => value);
+  const positive = values.filter((n) => Number.isFinite(n) && n > 0);
+  return mostCommon(positive, byNumber).map(({ value }) => value);
 }
-
-/** Spacing and radii above this are layout sizes, not part of a scale. */
-const MAX_SCALE_VALUE = 64;
-const MAX_SCALE_VALUES = 6;

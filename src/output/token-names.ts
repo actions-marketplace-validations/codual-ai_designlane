@@ -9,11 +9,21 @@ export function tokenKey(name: string): string {
   return key.replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "") || "unnamed";
 }
 
-/** Gives each of `keys` its own: a key already taken gets `-2`, `-3`, …, so two names that read the same (`a.b` and
- * `a-b`, or `x`'s dark `x-dark` and a real `x-dark`) never overwrite each other. */
-function claim(taken: Set<string>, key: string): string {
+/** Keys handed out so far, and the next free number for each one taken: so two names that read the same (`a.b` and
+ * `a-b`, or `x`'s dark `x-dark` and a real `x-dark`) never overwrite each other, and a thousand of one name take a
+ * thousand steps, not a million. */
+interface Claimed {
+  taken: Set<string>;
+  next: Map<string, number>;
+}
+
+const claimed = (): Claimed => ({ taken: new Set(), next: new Map() });
+
+function claim({ taken, next }: Claimed, key: string): string {
   let unique = key;
-  for (let n = 2; taken.has(unique); n++) unique = `${key}-${n}`;
+  let n = next.get(key) ?? 2;
+  while (taken.has(unique)) unique = `${key}-${n++}`;
+  next.set(key, n);
   taken.add(unique);
   return unique;
 }
@@ -38,7 +48,7 @@ function keysOf<T>(
   name: (item: T) => string,
   reference: (item: T) => string,
   identity: (item: T) => string,
-  taken: Set<string>,
+  taken: Claimed,
 ) {
   const shared = new Map<string, number>();
   for (const item of items) shared.set(name(item), (shared.get(name(item)) ?? 0) + 1);
@@ -52,7 +62,7 @@ function keysOf<T>(
 }
 
 export function keyedColors(colors: ColorToken[]): KeyedColor[] {
-  const taken = new Set<string>();
+  const taken = claimed();
   const reference = (c: ColorToken) => c.reference ?? c.name;
   const identity = (c: ColorToken) => `${reference(c)}|${c.source}|${c.light}`;
   const keyed = keysOf(colors, (c) => tokenKey(c.name), reference, identity, taken);
@@ -108,7 +118,7 @@ function typeStyleKey(style: TypeStyle): string {
 export function keyedStyles(styles: TypeStyle[]): KeyedStyle[] {
   const reference = (s: TypeStyle) => s.reference ?? s.name;
   const identity = (s: TypeStyle) => `${reference(s)}|${s.name}`;
-  return keysOf(styles, typeStyleKey, reference, identity, new Set()).map(({ item: style, key }) => {
+  return keysOf(styles, typeStyleKey, reference, identity, claimed()).map(({ item: style, key }) => {
     const weight = WEIGHT_NUMBERS[style.weight];
     // The platform font on Apple platforms is SF Pro; an empty family (a helper mixing several) has none.
     const family = style.family === "System" ? "SF Pro" : style.family;
@@ -121,5 +131,8 @@ export function keyedStyles(styles: TypeStyle[]): KeyedStyle[] {
   });
 }
 
+/** A number in a token's name: `1_5` for 1.5, since a `.` reads as a path in token and design file names alike. */
+export const numberLabel = (value: number) => String(value).replace(".", "_");
+
 /** A dimension's key, `space-16` or `radius-0_5`: never a bare number, which JavaScript would reorder. */
-export const dimensionKey = (prefix: string, value: number) => `${prefix}-${String(value).replace(".", "_")}`;
+export const dimensionKey = (prefix: string, value: number) => `${prefix}-${numberLabel(value)}`;

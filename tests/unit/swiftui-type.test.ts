@@ -116,11 +116,10 @@ describe("the app's own font helpers", () => {
 });
 
 describe("the type scale", () => {
-  it("keeps the scale short and says how many styles it left out", async () => {
+  it("lists every text style the app uses, however many", async () => {
     const lines = Array.from({ length: 25 }, (_, i) => `x.font(.system(size: ${10 + i}))`);
-    const { typeStyles: type, typeStylesOmitted } = await tokens(lines.join("\n"));
-    expect(type).toHaveLength(20);
-    expect(typeStylesOmitted).toBe(5);
+    const { typeStyles: type } = await tokens(lines.join("\n"));
+    expect(type).toHaveLength(25);
   });
 
   it("reads 512KB hostile files of every shape quickly", async () => {

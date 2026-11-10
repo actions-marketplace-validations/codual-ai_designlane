@@ -110,6 +110,7 @@ describe("named colours and references", () => {
         light: "#3366e6",
         source: "App/Screen.swift",
         reference: "Color.brand",
+        line: 2,
         kind: "code",
         uses: 3,
       },
@@ -362,14 +363,13 @@ describe("platform colours", () => {
 });
 
 describe("the palette", () => {
-  it("keeps the palette short and says how many colours it left out", async () => {
+  it("lists every colour the app uses, however many", async () => {
     const lines = Array.from(
       { length: 45 },
       (_, i) => `x(Color(red: ${(i % 9) / 8}, green: ${Math.floor(i / 9) / 4}, blue: 0))`,
     );
-    const { colors, colorsOmitted } = await tokens(lines.join("\n"));
-    expect(colors).toHaveLength(40);
-    expect(colorsOmitted).toBe(5);
+    const { colors } = await tokens(lines.join("\n"));
+    expect(colors).toHaveLength(45);
   });
 });
 

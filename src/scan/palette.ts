@@ -16,6 +16,8 @@ export interface NamedColor {
   source: string;
   /** How the code refers to it: `Theme.surface`, `Color("Brand")`. */
   reference: string;
+  /** The line it's declared on, for a colour declared in code. */
+  line?: number;
   kind: "asset" | "code";
 }
 
@@ -32,10 +34,7 @@ export interface ColorFindings {
 
 /** Colours this close (distance between their RGBA values, out of 255) are one colour written twice. */
 const SAME_COLOR = 8;
-/** The palette stops here so it stays small enough to hand an agent; the rest is counted, not dropped silently. */
-const MAX_COLORS = 40;
-
-type Palette = Pick<DesignTokens, "colors" | "colorsOmitted" | "systemColors">;
+type Palette = Pick<DesignTokens, "colors" | "systemColors">;
 
 export function palette(found: ColorFindings): Palette {
   const named = distinctNamed(found.named).map((c): ColorToken => ({ ...c, uses: 0 }));
@@ -68,8 +67,7 @@ export function palette(found: ColorFindings): Palette {
   }
   const ranked = [...named, ...unnamed.colors].sort((a, b) => b.uses - a.uses);
   return {
-    colors: ranked.slice(0, MAX_COLORS),
-    colorsOmitted: Math.max(0, ranked.length - MAX_COLORS),
+    colors: ranked,
     systemColors: mostCommon(found.system, byText).map(({ value, count }) => ({ name: value, uses: count })),
   };
 }

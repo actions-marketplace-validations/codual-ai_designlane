@@ -61,12 +61,10 @@ function scanOf(
     uses: 1,
     ...s,
   });
-  const tokens = {
+  const tokens: DesignTokens = {
     colors: colors.map(color),
-    colorsOmitted: 0,
     systemColors: [],
     typeStyles: typeStyles.map(style),
-    typeStylesOmitted: 0,
     fonts: [],
     spacing: [],
     radii: [],
@@ -151,7 +149,7 @@ describe("tokens.json for syncing", () => {
     const tokens = toDesignTokens(await shop());
     const color = tokens.color as Record<string, { $extensions: unknown }>;
     expect(color.brand?.$extensions).toEqual({
-      designmap: { reference: "Theme.brand", source: "Shop/Theme.swift", uses: 3 },
+      designmap: { reference: "Theme.brand", source: "Shop/Theme.swift", line: 3, uses: 3 },
     });
     expect(color["hex-ff0000"]?.$extensions).toEqual({ designmap: { source: "Shop/Home.swift", uses: 1 } });
     expect((tokens.typography as Record<string, { $extensions: unknown }>).heading?.$extensions).toEqual({
@@ -189,6 +187,17 @@ describe("tokens.json for syncing", () => {
     });
     const { typeStyles } = (await scanRepo(root)).frameworks[0]?.tokens ?? { typeStyles: [] };
     expect(typeStyles.find((s) => s.name === "heading")?.reference).toBe("Fonts.Brand.heading");
+  });
+
+  it("numbers same-named colours in order, one key each", () => {
+    const colors = Array.from({ length: 5 }, (_, i) => ({ name: "same", light: `#00000${i}`, uses: 1 }));
+    expect(ownKeys(toDesignTokens(scanOf(colors)).color)).toEqual([
+      "same",
+      "same-2",
+      "same-3",
+      "same-4",
+      "same-5",
+    ]);
   });
 
   it("keeps each token's key when the ranking changes, so a sync updates it rather than replacing it", () => {
@@ -263,6 +272,19 @@ describe("DESIGN.md", () => {
     expect(md).toContain("Also used, with a font the code works out as it runs: Custom (3 uses).");
     expect(md).toContain('  - section: "typography"');
     expect(md).not.toContain("typography:\n");
+  });
+
+  it("describes the most used colours in full and lists every other one briefly", () => {
+    const colors = Array.from({ length: 14 }, (_, i) => ({
+      name: `c${i}`,
+      light: `#0000${String(i).padStart(2, "0")}`,
+      uses: 20 - i,
+    }));
+    const md = toDesignMd(scanOf(colors));
+    expect(md).toContain("- **c11** `#000011`: 9 uses");
+    expect(md).not.toContain("- **c12**");
+    expect(md).toContain("Also used, 2 more colours: c12 `#000012` ×8, c13 `#000013` ×7.");
+    expect(md.split("---")[1]).toContain('  c13: "#000013"');
   });
 
   it("names the first screens and counts the rest", async () => {

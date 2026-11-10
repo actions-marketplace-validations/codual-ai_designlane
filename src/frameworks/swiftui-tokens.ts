@@ -1,5 +1,5 @@
 import { type NamedColor, palette } from "../scan/palette.js";
-import { commonNumbers } from "../scan/tokens.js";
+import { numbersByFrequency } from "../scan/tokens.js";
 import { typeScale } from "../scan/type-scale.js";
 import type { DesignTokens } from "../scan/types.js";
 import type { ScanContext } from "./plugin.js";
@@ -22,7 +22,7 @@ export async function swiftuiTokens(ctx: ScanContext, sources: SwiftSource[]): P
   return {
     ...palette(swiftColors(sources, assets)),
     ...typeScale(swiftType(sources)),
-    spacing: commonNumbers(ui, SPACING),
-    radii: commonNumbers(ui, RADIUS),
+    spacing: numbersByFrequency(ui, SPACING),
+    radii: numbersByFrequency(ui, RADIUS),
   };
 }

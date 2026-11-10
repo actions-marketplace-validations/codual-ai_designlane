@@ -118,8 +118,8 @@ function summary(scan: ScanResult): string {
   return scan.frameworks
     .map(({ screens, tokens }) => {
       const pages = screens.filter((s) => s.kind === "screen").length;
-      const colours = tokens.colors.length + tokens.colorsOmitted;
-      const styles = tokens.typeStyles.length + tokens.typeStylesOmitted;
+      const colours = tokens.colors.length;
+      const styles = tokens.typeStyles.length;
       const lines = [
         `${path.basename(scan.root)}: ${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`,
         `  ${plural(colours, "colour")}, ${plural(styles, "text style")}`,

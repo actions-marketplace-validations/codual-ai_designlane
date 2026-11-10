@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { commonNumbers, normalizeHex, rgbToHex } from "../../src/scan/tokens.js";
+import { normalizeHex, numbersByFrequency, rgbToHex } from "../../src/scan/tokens.js";
 
 it("normalizeHex accepts every hex form and drops an opaque alpha", () => {
   expect(normalizeHex("#ABC")).toBe("#aabbcc");
@@ -17,7 +17,10 @@ it("rgbToHex takes 0–1 channels, clamps the rest, and drops an opaque alpha", 
   expect(rgbToHex(Number.NaN, 1, 1)).toBe("#00ffff");
 });
 
-it("commonNumbers returns the most common values in range, ties smallest first", () => {
-  const texts = [".padding(16) .padding(8) .padding(16)", ".padding(8) .padding(200) .padding(0)"];
-  expect(commonNumbers(texts, /padding\((\d+)\)/g)).toEqual([8, 16]);
+it("numbersByFrequency returns every positive value, however many or large, most common first, ties smallest first", () => {
+  const texts = [
+    ".padding(16) .padding(8) .padding(16) .padding(8) .padding(0)",
+    ".padding(1) .padding(2) .padding(3) .padding(4) .padding(200) .padding(80)",
+  ];
+  expect(numbersByFrequency(texts, /padding\((\d+)\)/g)).toEqual([8, 16, 1, 2, 3, 4, 80, 200]);
 });

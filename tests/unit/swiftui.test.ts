@@ -196,6 +196,7 @@ describe("scanning a SwiftUI app", () => {
         light: "#ffffff80",
         source: "App/Colors.swift",
         reference: "glass",
+        line: 2,
         kind: "code",
         uses: 0,
       },
