@@ -5,6 +5,19 @@
   "description": "Map your mobile app's design system from its code: colors, type, spacing and components, for SwiftUI, Jetpack Compose and React Native.",
   "license": "Apache-2.0",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=22"
   },

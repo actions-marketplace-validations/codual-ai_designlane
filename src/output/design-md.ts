@@ -1,0 +1,183 @@
+/**
+ * The scan as a DESIGN.md (Google's design.md format, version alpha): tokens in the front matter, and short prose
+ * that only states what the code shows: how often each value is used and where it came from. Coding agents read it
+ * to build new screens that match the app.
+ */
+
+import path from "node:path";
+import { weightLabel } from "../scan/type-scale.js";
+import type { FrameworkScan, ScanResult } from "../scan/types.js";
+import { dimensionKey, keyedColors, keyedStyles } from "./token-names.js";
+
+const FRAMEWORK_NAMES = { swiftui: "SwiftUI" } as const;
+/** How many screens and components the overview names; the rest are counted. */
+const MAX_VIEWS_NAMED = 30;
+/** Colour names that say which colour is the app's own: the format asks for a `primary`, which points at one of
+ * these rather than at a guess. */
+const PRIMARY_NAMES = [/^accent(color)?$/i, /^(brand|tint)$/i];
+/** Plain words YAML 1.1 reads as true, false or null, so a key that's one of them is quoted. */
+const YAML_WORDS = /^(?:y|yes|n|no|true|false|on|off|null)$/i;
+
+type Yaml = { [key: string]: string | number | Yaml | Yaml[] };
+
+/** Strings are always quoted, since `#` starts a comment. */
+const scalar = (v: string | number) => (typeof v === "number" ? String(v) : JSON.stringify(v));
+const yamlKey = (k: string) => (/^[A-Za-z_][\w-]*$/.test(k) && !YAML_WORDS.test(k) ? k : JSON.stringify(k));
+
+function yaml(obj: Yaml, indent = ""): string {
+  return Object.entries(obj)
+    .map(([k, v]) => {
+      if (Array.isArray(v)) {
+        const items = v.map((item) => `${indent}  - ${yaml(item, `${indent}    `).trimStart()}`);
+        return `${indent}${yamlKey(k)}:\n${items.join("\n")}`;
+      }
+      if (typeof v === "object") return `${indent}${yamlKey(k)}:\n${yaml(v, `${indent}  `)}`;
+      return `${indent}${yamlKey(k)}: ${scalar(v)}`;
+    })
+    .join("\n");
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const px = (n: number) => `${n}px`;
+
+/** Names listed in prose, with how many more there are. */
+function named(names: string[]): string {
+  const shown = names.slice(0, MAX_VIEWS_NAMED).join(", ");
+  return names.length > MAX_VIEWS_NAMED ? `${shown}, and ${names.length - MAX_VIEWS_NAMED} more` : shown;
+}
+
+interface Part {
+  tokens: Yaml;
+  prose: string[];
+}
+
+type Prefix = (f: FrameworkScan) => string;
+
+function colorPart(frameworks: FrameworkScan[], prefix: Prefix): Part {
+  const tokens: Yaml = {};
+  const prose: string[] = [];
+  for (const f of frameworks) {
+    for (const { color: c, key: own, darkKey } of keyedColors(f.tokens.colors)) {
+      const key = `${prefix(f)}${own}`;
+      tokens[key] = c.light;
+      if (darkKey) tokens[`${prefix(f)}${darkKey}`] = c.dark ?? "";
+      const where = c.kind === "inline" ? "written without a name, first in" : "from";
+      const dark = darkKey ? ` (dark \`${c.dark}\`, as ${prefix(f)}${darkKey})` : "";
+      prose.push(`- **${key}** \`${c.light}\`${dark}: ${plural(c.uses, "use")}, ${where} \`${c.source}\`.`);
+    }
+    const { colorsOmitted, systemColors } = f.tokens;
+    if (colorsOmitted) prose.push(`- ${plural(colorsOmitted, "less used colour")} left out.`);
+    if (systemColors.length) {
+      const list = systemColors.map((s) => `${s.name} (${s.uses})`).join(", ");
+      prose.push(`\nPlatform colours, which follow the system's own palette: ${list}.`);
+    }
+  }
+  const keys = Object.keys(tokens);
+  const own = PRIMARY_NAMES.map((p) => keys.find((k) => p.test(k))).find(Boolean);
+  if (own && !("primary" in tokens)) {
+    tokens.primary = `{colors.${own}}`;
+    prose.unshift(`\`primary\` refers to ${own}, by its name.\n`);
+  }
+  return { tokens, prose };
+}
+
+function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
+  const tokens: Yaml = {};
+  const prose: string[] = [];
+  const computed: string[] = [];
+  for (const f of frameworks) {
+    for (const { style, key: own, values } of keyedStyles(f.tokens.typeStyles)) {
+      const key = `${prefix(f)}${own}`;
+      const { fontFamily, fontSize, fontWeight } = values;
+      if (!fontFamily && fontSize === undefined && fontWeight === undefined) {
+        computed.push(`${style.name} (${plural(style.uses, "use")})`);
+        continue;
+      }
+      tokens[key] = {
+        ...(fontFamily ? { fontFamily } : {}),
+        ...(fontSize !== undefined ? { fontSize: px(fontSize) } : {}),
+        ...(fontWeight !== undefined ? { fontWeight } : {}),
+      };
+      const value = [fontFamily, fontSize !== undefined && px(fontSize), weightLabel(style.weight)];
+      prose.push(`- **${key}** (${value.filter(Boolean).join(" ")}): ${plural(style.uses, "use")}.`);
+    }
+    if (f.tokens.typeStylesOmitted) {
+      prose.push(`- ${plural(f.tokens.typeStylesOmitted, "less used style")} left out.`);
+    }
+    if (f.tokens.fonts.length) prose.push(`\nCustom font families: ${f.tokens.fonts.join(", ")}.`);
+  }
+  if (computed.length)
+    prose.push(`\nAlso used, with a font the code works out as it runs: ${computed.join(", ")}.`);
+  return { tokens, prose };
+}
+
+function scalePart(
+  frameworks: FrameworkScan[],
+  prefix: Prefix,
+  kind: string,
+  values: (f: FrameworkScan) => number[],
+) {
+  const tokens: Yaml = {};
+  for (const f of frameworks) {
+    for (const v of [...values(f)].sort((a, b) => a - b))
+      tokens[`${prefix(f)}${dimensionKey(kind, v)}`] = px(v);
+  }
+  return tokens;
+}
+
+export function toDesignMd(scan: ScanResult): string {
+  const name = path.basename(scan.root);
+  const { frameworks } = scan;
+  const prefix = (f: FrameworkScan) => (frameworks.length > 1 ? `${f.framework}-` : "");
+  const colors = colorPart(frameworks, prefix);
+  const type = typePart(frameworks, prefix);
+  const spacing = scalePart(frameworks, prefix, "space", (f) => f.tokens.spacing);
+  const rounded = scalePart(frameworks, prefix, "radius", (f) => f.tokens.radii);
+
+  const front: Yaml = {
+    version: "alpha",
+    name,
+    description: `The design system of ${name}, read from its code by Designmap.`,
+  };
+  const omitted: Yaml[] = [];
+  for (const [section, tokens, reason] of [
+    ["colors", colors.tokens, "No colours found"],
+    ["typography", type.tokens, "No text styles with a font, size or weight the code sets"],
+    ["spacing", spacing, "No spacing values found"],
+    ["rounded", rounded, "No corner radii found"],
+  ] as const) {
+    if (Object.keys(tokens).length) front[section] = tokens;
+    else omitted.push({ section, reason });
+  }
+  omitted.push({ section: "components", reason: "Component tokens aren't read yet" });
+  front.omitted = omitted;
+
+  const sections = [`---\n${yaml(front)}\n---`, `# ${name}`, `## Overview\n\n${overview(scan, name)}`];
+  if (colors.prose.length) sections.push(`## Colors\n\n${colors.prose.join("\n")}`);
+  if (type.prose.length) sections.push(`## Typography\n\n${type.prose.join("\n")}`);
+  if (Object.keys(spacing).length) {
+    const values = Object.values(spacing).join(", ");
+    sections.push(`## Layout\n\nThe UI code's most common spacing values, smallest first: ${values}.`);
+  }
+  if (Object.keys(rounded).length) {
+    const values = Object.values(rounded).join(", ");
+    sections.push(`## Shapes\n\nThe UI code's most common corner radii, smallest first: ${values}.`);
+  }
+  return `${sections.join("\n\n")}\n`;
+}
+
+function overview({ frameworks }: ScanResult, name: string): string {
+  if (!frameworks.length)
+    return `Designmap found no ${Object.values(FRAMEWORK_NAMES).join(" or ")} code in ${name}.`;
+  const views = frameworks.flatMap((f) => f.screens);
+  const screens = views.filter((v) => v.kind === "screen").map((v) => v.name);
+  const components = views.filter((v) => v.kind === "component").map((v) => v.name);
+  const built = frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
+  return [
+    `${name} is built with ${built}: ${plural(screens.length, "screen")} and ${plural(components.length, "component")}. Everything here was read from its code. Colours and text styles are listed most used first, with their use counts. Sizes are in points, written as px.`,
+    screens.length ? `Screens: ${named(screens)}.` : "",
+    components.length ? `Components: ${named(components)}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
