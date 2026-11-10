@@ -196,8 +196,9 @@ describe("DESIGN.md", () => {
   });
 
   it("quotes names YAML would otherwise misread", async () => {
-    const root = path.join(await tempDir({ "my: app #1/A.swift": APP["Shop/Theme.swift"] }), "my: app #1");
-    expect(toDesignMd(await scanRepo(root))).toContain('name: "my: app #1"');
+    // `#` starts a YAML comment, and is allowed in folder names everywhere (`:` isn't on Windows).
+    const root = path.join(await tempDir({ "#1 app/A.swift": APP["Shop/Theme.swift"] }), "#1 app");
+    expect(toDesignMd(await scanRepo(root))).toContain('name: "#1 app"');
     expect(toDesignMd(scanOf([{ name: "on" }, { name: "null" }]))).toContain(
       '  "on": "#000000"\n  "null": "#000000"',
     );
