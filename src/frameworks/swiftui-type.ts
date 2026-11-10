@@ -6,12 +6,13 @@
 import { firstAtOrAfter } from "../scan/sorted.js";
 import { type TypeFindings, type TypeUse, weightLabel } from "../scan/type-scale.js";
 import { type Argument, expressionAt } from "./swift-expressions.js";
-import { type FontHelper, fontHelpers, ownerAt, type Range } from "./swift-font-helpers.js";
+import { type FontHelper, fontHelpers, type Range } from "./swift-font-helpers.js";
 import { WEIGHTS } from "./swift-font-names.js";
 import { FONT_TYPES, fontValues, type HelperReference, SIZE_LABELS } from "./swift-font-reading.js";
 import { type FontSite, fontSites } from "./swift-font-sites.js";
-import { type SwiftTokens, swiftTokens, tokenIndexAt } from "./swift-tokens.js";
-import type { SwiftSource } from "./swiftui-sources.js";
+import { ownerAt } from "./swift-owners.js";
+import { type SwiftTokens, tokenIndexAt } from "./swift-tokens.js";
+import { type SwiftSource, tokensOf } from "./swiftui-sources.js";
 
 /** A helper's key: its type and name, with `()` for a function, which a type can declare beside a property. */
 const helperKey = (owner: string, name: string, isFunction: boolean) =>
@@ -20,7 +21,7 @@ const helperKey = (owner: string, name: string, isFunction: boolean) =>
 /** Every place the Swift code sets a font: text styles, system sizes, custom fonts and the app's own helpers. */
 export function swiftType(sources: SwiftSource[]): TypeFindings {
   const files = sources.map((source) => {
-    const tokens = swiftTokens(source.text);
+    const tokens = tokensOf(source);
     const sites = fontSites(tokens);
     return { source, tokens, sites, helpers: fontHelpers(tokens, sites) };
   });

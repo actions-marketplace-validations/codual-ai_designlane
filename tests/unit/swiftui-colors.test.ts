@@ -188,6 +188,45 @@ describe("named colours and references", () => {
   });
 });
 
+describe("colours declared on the app's own type", () => {
+  const theme = [
+    "import SwiftUI",
+    "enum Theme {",
+    "  static let surface = Color(red: 0.1, green: 0.1, blue: 0.1)",
+    "  static let ink = Color(red: 0.9, green: 0.9, blue: 0.9)",
+    "  static let base = Color(red: 0.5, green: 0.5, blue: 0.5)",
+    "  static let baseSoft = Self.base.opacity(0.5)",
+    "  enum Dark { static let edge = Color(red: 0.3, green: 0.3, blue: 0.3) }",
+    "}",
+    "final class Scene { static let glow = UIColor(red: 1, green: 0.5, blue: 0, alpha: 1) }",
+  ].join("\n");
+  const uses = async (code: string) => {
+    const { colors } = await tokens(code, { "App/Theme.swift": theme });
+    return Object.fromEntries(colors.map((c) => [c.name, c.uses]));
+  };
+
+  it("counts a colour on a nested type, and Self.base inside its own type", async () => {
+    expect(await uses("x(Theme.Dark.edge)\ny(Dark.edge)")).toMatchObject({ edge: 2, base: 1 });
+    const subscripted =
+      "final class Palette { static let tone = Color(red: 0.2, green: 0.6, blue: 0.4)\n class subscript(i: Int) -> Color { Self.tone } }";
+    const { colors } = await tokens("", { "App/Palette.swift": `import SwiftUI\n${subscripted}` });
+    expect(colors.find((c) => c.name === "tone")?.uses).toBe(1);
+  });
+
+  it("counts Theme.surface anywhere as a use, in a modifier or not, from any file", async () => {
+    const code = [
+      "Theme.surface.ignoresSafeArea()",
+      "Text(t).foregroundStyle(Theme.ink)\n.background(Theme.surface)",
+      "layer.backgroundColor = Scene.glow.cgColor",
+    ].join("\n");
+    expect(await uses(code)).toMatchObject({ surface: 2, ink: 1, glow: 1 });
+  });
+
+  it("doesn't count a member of another type that shares the colour's name", async () => {
+    expect(await uses("Layout.surface\nScene.ink")).toMatchObject({ surface: 0, ink: 0 });
+  });
+});
+
 describe("platform colours", () => {
   it("counts platform colours separately, by name", async () => {
     const { systemColors } = await tokens(
@@ -286,6 +325,28 @@ describe("hostile input", () => {
     const near = Array.from({ length: 20_000 }, (_, i) => `x(Color(hex: "#0${i % 4}0000"))`);
     const started = performance.now();
     await tokens("", inFiles([...named, ...near], 5000));
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it("stays fast with thousands of colours declared on a type and thousands of uses", async () => {
+    const declared = Array.from(
+      { length: 5_000 },
+      (_, i) => `static let c${i} = Color(hex: "#0000${i % 10}0")`,
+    );
+    const used = Array.from({ length: 20_000 }, (_, i) => `x(Theme.c${i % 5_000})`);
+    const started = performance.now();
+    await tokens("", {
+      "App/Theme.swift": `enum Theme {\n${declared.join("\n")}\n}`,
+      ...inFiles(used, 5000),
+    });
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it("stays fast on long chains of type names and deep blocks full of Self", async () => {
+    const chain = `x(${"Theme.".repeat(50_000)}c)`;
+    const deep = `enum Theme {\nstatic let c = Color(red: 1, green: 0, blue: 0)\n${"do {\n x(Self.c)\n".repeat(5_000)}${"}".repeat(5_000)}\n}`;
+    const started = performance.now();
+    await tokens("", { "App/Chain.swift": chain, "App/Theme.swift": deep });
     expect(performance.now() - started).toBeLessThan(3000);
   });
 

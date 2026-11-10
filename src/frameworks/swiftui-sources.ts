@@ -1,6 +1,7 @@
 import { isTestPath } from "../scan/test-paths.js";
 import type { ScanContext } from "./plugin.js";
 import { codeOnly, withoutPreviews } from "./swift-source.js";
+import { type SwiftTokens, swiftTokens } from "./swift-tokens.js";
 
 /** Lines longer than this are generated data, not hand-written declarations, and aren't matched line by line. */
 const MAX_LINE = 1000;
@@ -13,6 +14,18 @@ export interface SwiftSource {
   /** `text` split into lines once, since several readers go line by line. */
   lines: string[];
   swiftUI: boolean;
+}
+
+const tokenized = new WeakMap<SwiftSource, SwiftTokens>();
+
+/** `source` read into tokens once, for every reader that needs them. */
+export function tokensOf(source: SwiftSource): SwiftTokens {
+  let tokens = tokenized.get(source);
+  if (!tokens) {
+    tokens = swiftTokens(source.text);
+    tokenized.set(source, tokens);
+  }
+  return tokens;
 }
 
 /** Every non-test Swift file, read once, with comments, strings and previews blanked out. */

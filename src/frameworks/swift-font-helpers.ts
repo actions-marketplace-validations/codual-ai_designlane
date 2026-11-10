@@ -9,6 +9,7 @@ import { COMPUTED, type TypeUse } from "../scan/type-scale.js";
 import { expressionAt } from "./swift-expressions.js";
 import { FONT_TYPES, type FontValue, fontValues } from "./swift-font-reading.js";
 import type { FontSite } from "./swift-font-sites.js";
+import { ownerAt } from "./swift-owners.js";
 import { type SwiftTokens, tokenIndexAt } from "./swift-tokens.js";
 
 export type Range = [start: number, end: number];
@@ -30,11 +31,6 @@ export interface FontHelper {
 
 const DECLARERS = new Set(["static", "class"]);
 const MEMBERS = new Set(["let", "var", "func"]);
-const TYPE_KEYWORDS = new Set(["extension", "struct", "class", "enum", "actor"]);
-/** How far back from a `{` a type's declaration (`extension Font where … {`) can start. */
-const MAX_TYPE_HEADER_TOKENS = 64;
-/** How many brackets out from a declaration its type is looked for; real types nest a few deep. */
-const MAX_OWNER_DEPTH = 16;
 /** How far into a helper's body its fonts are looked for; real helpers are a few lines. */
 const MAX_BODY_TOKENS = 512;
 /** How many of a body's fonts are compared to find what they share. */
@@ -160,22 +156,4 @@ function shared(fonts: TypeUse[]): TypeUse {
     ...(same("size") && one.size !== undefined ? { size: one.size } : {}),
     weight: same("weight") ? one.weight : COMPUTED,
   };
-}
-
-/** The type the token at `index` is declared in: the nearest enclosing `extension Font {`, `enum AppFont {`, …. */
-export function ownerAt(file: SwiftTokens, index: number): string {
-  let open = file.enclosing[index] ?? -1;
-  for (let depth = 0; open !== -1 && depth < MAX_OWNER_DEPTH; depth++, open = file.enclosing[open] ?? -1) {
-    if (file.tokens[open]?.text !== "{") continue;
-    for (let k = open - 1; k >= 0 && k >= open - MAX_TYPE_HEADER_TOKENS; k--) {
-      const token = file.tokens[k];
-      if (!token || token.text === "{" || token.text === "}") break;
-      if (!TYPE_KEYWORDS.has(token.text) || file.tokens[k + 1]?.kind !== "name") continue;
-      // `extension SwiftUI.Font`: the type is the last part of its name.
-      let name = k + 1;
-      while (file.tokens[name + 1]?.text === "." && file.tokens[name + 2]?.kind === "name") name += 2;
-      return file.tokens[name]?.text ?? "";
-    }
-  }
-  return "";
 }

@@ -1,6 +1,8 @@
 import { type ColorFindings, type NamedColor, nameKey } from "../scan/palette.js";
 import { normalizeHex, rgbToHex } from "../scan/tokens.js";
-import { matchesInCode, matchesPerLine, type SwiftSource } from "./swiftui-sources.js";
+import { ownerAt } from "./swift-owners.js";
+import { tokenIndexAt } from "./swift-tokens.js";
+import { matchesInCode, matchesPerLine, type SwiftSource, tokensOf } from "./swiftui-sources.js";
 
 // Colour patterns are built from these parts so each reads like the Swift it matches.
 const COLOR_CALL = String.raw`\b(?:Color|UIColor|NSColor)\(\s*`;
@@ -67,6 +69,11 @@ const GRADIENT_COLORS = /\bcolors:\s*\[([^\]\n]*)\]/g;
 /** `.red` at the start of an argument (`.foregroundStyle(.red, .blue)`, `cond ? .red : .gray`), not `Color(.red)`,
  * which `COLOR_MEMBER` already counts. */
 const IMPLICIT_MEMBER = /(?:^|[\s,?:])\.(\w+)/g;
+/** `Theme.surface`, `Theme.Dark.surface` or `Self.surface`: a member of a named type, a colour when that type declares
+ * a colour of that name. The member is only looked at, so in a chain each type and the name after it are read. */
+const TYPE_MEMBER = /\b([A-Z]\w*)\.(?=(\w+))/g;
+/** Types whose members `COLOR_MEMBER` already counts. */
+const COLOR_TYPES = new Set(["Color", "UIColor", "NSColor"]);
 /** From the first nested call to the end of an argument list. */
 const NESTED_CALL = /\w+\(.*$/;
 
@@ -99,10 +106,12 @@ const isSystem = (name: string) => SWIFTUI_SYSTEM.has(name) || UIKIT_SYSTEM.test
 export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): ColorFindings {
   const opacityFirst = sources.some((s) => OPACITY_FIRST.test(s.code));
   const found: ColorFindings = { named: [...assets], references: [], literals: [], system: [] };
-  // Colours declared on a type (`static let red`), which take over the platform colour of the same name.
+  // Colours declared on a type (`static let red`), which take over the platform colour of the same name, and the
+  // type each is declared on, so `Theme.surface` counts as a use of `surface`.
   const typeMembers = new Set<string>();
+  const owners = new Map<string, Set<string>>();
   for (const source of sources) {
-    for (const { hex, prefix, isInit } of literals(source, opacityFirst)) {
+    for (const { hex, prefix, isInit, start } of literals(source, opacityFirst)) {
       const declared = DECLARED.exec(prefix);
       // `.init(red: …)` is only a colour when declared as one: `let ink: Color = .init(…)`.
       if (isInit && !/Color$/.test(declared?.[3] ?? "")) continue;
@@ -112,7 +121,11 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
         continue;
       }
       found.named.push({ name, light: hex, source: source.rel, kind: "code" });
-      if (declared[1]) typeMembers.add(nameKey(name));
+      if (!declared[1]) continue;
+      typeMembers.add(nameKey(name));
+      const tokens = tokensOf(source);
+      const owner = ownerAt(tokens, tokenIndexAt(tokens, start));
+      if (owner) owners.set(owner, (owners.get(owner) ?? new Set()).add(nameKey(name)));
     }
     for (const { m } of matchesPerLine(source, ASSET_REFERENCE)) found.references.push(m[1] ?? "");
     for (const { m } of matchesPerLine(source, GENERATED_REFERENCE))
@@ -126,6 +139,15 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
   const takesOver = (name: string, key: string) =>
     typeMembers.has(key) || (name === "accentColor" && assetNames.has(key));
   for (const source of sources) {
+    for (const m of matchesInCode(source, TYPE_MEMBER)) {
+      const name = m[2] ?? "";
+      let owner = m[1] ?? "";
+      if (owner === "Self") {
+        const tokens = tokensOf(source);
+        owner = ownerAt(tokens, tokenIndexAt(tokens, m.index ?? 0));
+      }
+      if (!COLOR_TYPES.has(owner) && owners.get(owner)?.has(nameKey(name))) found.references.push(name);
+    }
     for (const name of colorNames(source)) {
       const key = nameKey(name);
       if (appNames.has(key) && (!isSystem(name) || takesOver(name, key))) {
@@ -157,7 +179,7 @@ function* literals(source: SwiftSource, opacityFirst: boolean) {
   const at = (m: RegExpMatchArray) => {
     const start = m.index ?? 0;
     const prefix = source.text.slice(Math.max(0, start - DECLARED_CHARS), start);
-    return { prefix, isInit: source.text.startsWith(".init", start) };
+    return { prefix, isInit: source.text.startsWith(".init", start), start };
   };
   const channel = (value?: string, per255?: string) => Number(value ?? 0) / (per255 ? 255 : 1);
   const alpha = (value?: string) => (value === undefined ? 1 : Number(value));
