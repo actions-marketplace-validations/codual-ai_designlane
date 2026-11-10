@@ -32,6 +32,24 @@ export interface FileList {
   unreadable: string[];
 }
 
+/** What the read missed, in a sentence, or undefined when it read everything. */
+export function readGaps({ truncated, unreadable }: Omit<FileList, "files">): string | undefined {
+  const gaps: string[] = [];
+  if (truncated) {
+    gaps.push(
+      `it stopped after ${MAX_FILES.toLocaleString("en")} files (point it at the app's own folder to read fewer)`,
+    );
+  }
+  if (unreadable.length) {
+    const some = unreadable.slice(0, 3).join(", ");
+    const folders = `${unreadable.length} folder${unreadable.length === 1 ? "" : "s"}`;
+    gaps.push(
+      `${folders} couldn't be opened (${some}${unreadable.length > 3 ? ", …" : ""}; check their permissions)`,
+    );
+  }
+  return gaps.length ? `Only part of the app was read: ${gaps.join(", and ")}.` : undefined;
+}
+
 /** Lists the project's files, skipping hidden folders, dependencies, build output and symlinks. */
 export async function listFiles(root: string): Promise<FileList> {
   const list: FileList = { files: [], truncated: false, unreadable: [] };
@@ -72,3 +90,11 @@ export async function readText(abs: string): Promise<string | undefined> {
 }
 
 const toRel = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join("/");
+
+export async function isFolder(file: string): Promise<boolean> {
+  try {
+    return (await stat(file)).isDirectory();
+  } catch {
+    return false;
+  }
+}

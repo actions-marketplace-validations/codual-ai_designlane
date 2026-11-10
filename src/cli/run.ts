@@ -1,7 +1,8 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { writeOutputs } from "../output/write.js";
+import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
 import type { ScanResult } from "../scan/types.js";
 
@@ -9,6 +10,11 @@ const HELP = `designmap: map a mobile app's design system from its code
 
 Usage
   designmap [dir]   Read the app in dir (default: here) and write designmap/tokens.json and designmap/DESIGN.md
+  designmap mcp [dir]
+                    Run the MCP server, so a coding agent reads the app's design system while it builds
+
+Add to Claude Code
+  claude mcp add designmap -- designmap mcp /path/to/app
 
 Options
   --out <dir>       Write the files here instead
@@ -22,50 +28,83 @@ export interface Output {
   error: (text: string) => void;
 }
 
+/** A mistake in how the command was run: its message, and the exit code it ends with. */
+class UsageError extends Error {
+  constructor(
+    message: string,
+    readonly code: number,
+  ) {
+    super(message);
+  }
+}
+
 /** Runs the command line with `argv` (without `node` and the script), and returns the exit code. */
-export async function run(argv: string[], { out, error }: Output): Promise<number> {
-  let parsed: ReturnType<typeof parse>;
+export async function run(argv: string[], io: Output): Promise<number> {
   try {
-    parsed = parse(argv);
+    const { values, positionals } = parse(argv);
+    if (values.help) return done(io.out, HELP);
+    if (values.version) return done(io.out, await version());
+    const serving = positionals[0] === "mcp";
+    const root = await appFolder(serving ? positionals.slice(1) : positionals);
+    // Awaited here, so a usage error thrown while mapping is caught below.
+    return await (serving ? serve(root) : map(root, values, io));
   } catch (e) {
-    error(`designmap: ${(e as Error).message}\n\n${HELP}`);
-    return 2;
+    if (!(e instanceof UsageError)) throw e;
+    io.error(`designmap: ${e.message}`);
+    return e.code;
   }
-  const { values, positionals } = parsed;
-  if (values.help) return done(out, HELP);
-  if (values.version) return done(out, await version());
-  if (positionals.length > 1) {
-    error(`designmap: expected one folder, got ${positionals.length}\n\n${HELP}`);
-    return 2;
-  }
-  const root = path.resolve(positionals[0] ?? ".");
-  if (!(await isFolder(root))) {
-    error(`designmap: not a folder: ${root}`);
-    return 1;
-  }
+}
+
+/** The app folder the arguments name, or the current folder when they name none. */
+async function appFolder(folders: string[]): Promise<string> {
+  if (folders.length > 1) throw new UsageError(`expected one folder, got ${folders.length}\n\n${HELP}`, 2);
+  const root = path.resolve(folders[0] ?? ".");
+  if (!(await isFolder(root))) throw new UsageError(`not a folder: ${root}`, 1);
+  return root;
+}
+
+/** Reads the app and writes tokens.json and DESIGN.md, or prints the scan with `--json`. */
+async function map(
+  root: string,
+  values: { out?: string; json?: boolean },
+  { out, error }: Output,
+): Promise<number> {
   const scan = await scanRepo(root);
+  const gaps = readGaps(scan);
+  if (gaps) error(`designmap: ${gaps}`);
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
-  if (scan.frameworks.length === 0) {
-    error(`designmap: no SwiftUI code found in ${scan.root}`);
-    return 1;
-  }
+  if (scan.frameworks.length === 0) throw new UsageError(`no SwiftUI code found in ${scan.root}`, 1);
   out(summary(scan));
   const written = await writeOutputs(scan, values.out ? path.resolve(values.out) : undefined);
   out(`Wrote ${shown(written.tokens)}\n      ${shown(written.design)}`);
   return 0;
 }
 
-const parse = (argv: string[]) =>
-  parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      out: { type: "string" },
-      json: { type: "boolean" },
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-    },
-  });
+/** Serves MCP over stdin and stdout until the agent disconnects; stdout belongs to the protocol from here on. */
+async function serve(root: string): Promise<number> {
+  // The MCP library loads only for this command, not for every map.
+  const { createServer } = await import("../mcp/server.js");
+  const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
+  await createServer(root, await version()).connect(new StdioServerTransport());
+  return 0;
+}
+
+function parse(argv: string[]) {
+  try {
+    return parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: {
+        out: { type: "string" },
+        json: { type: "boolean" },
+        help: { type: "boolean", short: "h" },
+        version: { type: "boolean", short: "v" },
+      },
+    });
+  } catch (e) {
+    throw new UsageError(`${(e as Error).message}\n\n${HELP}`, 2);
+  }
+}
 
 function done(out: Output["out"], text: string): number {
   out(text);
@@ -90,14 +129,6 @@ function summary(scan: ScanResult): string {
       return lines.join("\n");
     })
     .join("\n");
-}
-
-async function isFolder(file: string): Promise<boolean> {
-  try {
-    return (await stat(file)).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /** A path relative to where the command was run, unless it's outside it. */

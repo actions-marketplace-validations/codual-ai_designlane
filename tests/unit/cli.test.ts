@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { chmod, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../src/cli/run.js";
@@ -66,6 +66,26 @@ describe("designmap [dir]", () => {
       expect(code).toBe(1);
       expect(error).toBe(`designmap: not a folder: ${target}`);
     }
+  });
+
+  it.skipIf(process.platform === "win32")("warns when only part of the app could be read", async () => {
+    const root = await tempDir({ ...APP, "Locked/A.swift": "" });
+    await chmod(path.join(root, "Locked"), 0o000);
+    try {
+      const { code, error } = await designmap(root, "--out", path.join(await tempDir({}), "out"));
+      expect(code).toBe(0);
+      expect(error).toBe(
+        "designmap: Only part of the app was read: 1 folder couldn't be opened (Locked; check their permissions).",
+      );
+    } finally {
+      await chmod(path.join(root, "Locked"), 0o755);
+    }
+  });
+
+  it("checks the folder before serving MCP", async () => {
+    const root = await tempDir(APP);
+    expect(await designmap("mcp", path.join(root, "missing"))).toMatchObject({ code: 1 });
+    expect(await designmap("mcp", root, root)).toMatchObject({ code: 2 });
   });
 
   it("prints help and the version", async () => {
