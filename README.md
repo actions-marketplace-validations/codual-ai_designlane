@@ -2,7 +2,7 @@
 
 Keep your Figma design system in sync with your app's code.
 
-https://github.com/user-attachments/assets/382e854a-1545-44d9-b94b-70c56336c43c
+https://github.com/user-attachments/assets/29a82c2f-6df5-4788-a596-fab2a4b10efb
 
 ## How it works
 
