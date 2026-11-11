@@ -2,14 +2,43 @@
 
 Keeps a Figma file's variables and text styles in sync with an app's code.
 
-1. Run `designmap ./YourApp`. It writes `designmap/tokens.json`.
+1. Keep the app's `designmap/tokens.json` up to date with CI (below), or run `designmap ./YourApp` yourself.
 2. Run `pnpm build:plugin`.
 3. In Figma: **Plugins → Development → Import plugin from manifest…** and pick `figma-plugin/manifest.json`.
-4. Run **Designmap**, pick `tokens.json`, read the plan, and press **Apply**.
+4. Run **Designmap** and connect the app's GitHub repo, with a fine-grained token that can only read this repo's
+   contents. The token stays on your computer.
+5. From then on, opening Designmap shows what changed in the code. Read the plan and press **Apply**.
 
-The plugin creates a **Designmap** variable collection and text styles. Each one records the token's identity, so the
-next sync finds it under any name, and shows how the code refers to it (`Theme.surface`) as a variable's iOS code
-syntax and in its description.
+You can also pick a `tokens.json` file instead of connecting a repo.
+
+## Keeping tokens.json up to date
+
+Add this workflow to the app's repo as `.github/workflows/design-tokens.yml`. On every push to `main` it writes
+`designmap/tokens.json` from the code, and commits it when it changed. A `main` protected from direct pushes refuses
+that commit; allow GitHub Actions to push, or run the workflow on another branch.
+
+```yaml
+name: Design tokens
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  tokens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: nikhil27gargeya/designmap-clean@main # pin to a release once there is one
+        with:
+          app: . # the app's folder, if it isn't the repo's root
+```
+
+## What a sync does
+
+The plugin creates a variable collection named after the app, such as **Rummy (Designmap)**, and text styles. Each
+one records the token's identity, so the next sync finds it under any name, and shows how the code refers to it
+(`Theme.surface`) as a variable's iOS code syntax and in its description.
 
 On each sync:
 
@@ -24,4 +53,4 @@ On each sync:
 - Text styles whose font this file doesn't have are left out, and named in the plan.
 - Variables and styles a designer made are left alone, and so are descriptions and publishing choices a designer set.
 
-Run it again whenever `tokens.json` changes, for example after CI regenerates it.
+Colours the code uses without naming them are grouped under `color/Unnamed`.

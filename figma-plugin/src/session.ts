@@ -4,15 +4,24 @@
 import { planSync, type SyncPlan } from "../../src/sync/plan.js";
 import { readTokensFile, type SyncColor, type SyncTokens } from "../../src/sync/tokens-file.js";
 import { type ApplyOptions, applyPlan } from "./apply.js";
+import {
+  type Connection,
+  checkConnection,
+  forgetConnection,
+  saveConnection,
+  savedConnection,
+} from "./connection.js";
 import { availableFontStyles, darkUnavailable, readDesignFile, textStyleFonts } from "./design-file.js";
-import { type PlanSummary, type ToWindow, toPlugin } from "./messages.js";
-import { missingFont } from "./notes.js";
+import { fetchTokensFile } from "./github.js";
+import { type PlanSummary, type RepoSource, type ToWindow, toPlugin } from "./messages.js";
+import { darkModeAdded, invalidJson, missingFont, type Origin, stoppedPartway } from "./notes.js";
 import { describeFont, type FontValue, fontFor, hasOwnDark } from "./values.js";
 
 interface Pending {
   id: number;
   plan: SyncPlan;
   options: ApplyOptions;
+  origin: Origin;
   /** Styles left out of the plan for want of their font, still to be named once it's applied. */
   missingFonts: MissingFont[];
 }
@@ -36,10 +45,10 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
     return queue;
   };
 
-  async function plan(id: number, json: string): Promise<void> {
+  async function plan(id: number, json: string, origin: Origin): Promise<void> {
     // A new file replaces any plan already shown, even if this one can't be read.
     pending = undefined;
-    const inCode = readTokensFile(parseJson(json));
+    const inCode = readTokensFile(parseJson(json, origin));
     const darkLeftOut =
       (await darkUnavailable()) && inCode.colors.some((color) => hasOwnDark(color.light, color.dark));
     const tokens = darkLeftOut ? withoutDark(inCode) : withoutRedundantDark(inCode);
@@ -48,6 +57,7 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
       id,
       plan,
       options: { retryDark: darkLeftOut, ...(tokens.app ? { app: tokens.app } : {}) },
+      origin,
       missingFonts,
     };
     const summary = summarize(plan, !tokens.complete);
@@ -62,41 +72,84 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
   }
 
   async function apply(id: number): Promise<void> {
-    if (!pending) throw new Error("Pick a tokens.json first.");
+    if (!pending) throw new Error("There's no plan to apply yet.");
     if (pending.id !== id) throw new Error("The plan changed. Look it over, then press Apply again.");
-    const { plan, options, missingFonts } = pending;
+    const { plan, options, origin, missingFonts } = pending;
     pending = undefined;
     try {
-      const notes = await applyPlan(plan, options);
+      const { notes, darkValuesPending } = await applyPlan(plan, options);
       const missingFontNotes = missingFonts.map(({ name, font }) => missingFont(name, font));
-      send({ type: "applied", notes: [...missingFontNotes, ...notes] });
+      const darkNotes = darkValuesPending ? [darkModeAdded(origin)] : [];
+      send({ type: "applied", notes: [...missingFontNotes, ...notes, ...darkNotes] });
     } catch (error) {
-      throw new Error(
-        `The sync stopped partway. Pick tokens.json again to see what is left. (${messageOf(error)})`,
-      );
+      throw new Error(stoppedPartway(origin, messageOf(error)));
     }
+  }
+
+  /** Says which repo is connected, and plans from it if one is. */
+  async function ready(id: number): Promise<void> {
+    const connection = await savedConnection();
+    send({ type: "connection", repo: connection ? repoOf(connection) : null });
+    if (connection) await planFromRepo(id, connection);
+  }
+
+  /** Saves a connection once it has read tokens.json, so a mistyped one is never kept. */
+  async function connect(id: number, connection: Connection): Promise<void> {
+    const json = await fetchTokensFile(checkConnection(connection));
+    await saveConnection(connection);
+    send({ type: "connection", repo: repoOf(connection) });
+    await plan(id, json, "repo");
+  }
+
+  async function fetchPlan(id: number): Promise<void> {
+    const connection = await savedConnection();
+    if (!connection) throw new Error("Connect a repo first.");
+    await planFromRepo(id, connection);
+  }
+
+  async function planFromRepo(id: number, connection: Connection): Promise<void> {
+    await plan(id, await fetchTokensFile(connection), "repo");
+  }
+
+  async function disconnect(): Promise<void> {
+    await forgetConnection();
+    send({ type: "connection", repo: null });
   }
 
   return (data: unknown): Promise<void> => {
     const message = toPlugin(data);
     if (!message) return Promise.resolve();
-    // Closing waits its turn too, so it never cuts an apply short.
-    if (message.type === "close") return inTurn(async () => figma.closePlugin());
-    return message.type === "plan"
-      ? inTurn(() => plan(message.id, message.json))
-      : inTurn(() => apply(message.id));
+    switch (message.type) {
+      case "ready":
+        return inTurn(() => ready(message.id));
+      case "connect": {
+        const { id, type: _, ...connection } = message;
+        return inTurn(() => connect(id, connection));
+      }
+      case "fetch":
+        return inTurn(() => fetchPlan(message.id));
+      case "disconnect":
+        return inTurn(disconnect);
+      case "plan":
+        return inTurn(() => plan(message.id, message.json, "file"));
+      case "apply":
+        return inTurn(() => apply(message.id));
+      // Closing waits its turn too, so it never cuts an apply short.
+      case "close":
+        return inTurn(async () => figma.closePlugin());
+    }
   };
 }
 
+const repoOf = ({ repo, branch, path }: Connection): RepoSource => ({ repo, branch, path });
+
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-function parseJson(text: string): unknown {
+function parseJson(text: string, origin: Origin): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(
-      "This file isn't valid JSON. Pick the tokens.json Designmap wrote, or run designmap again.",
-    );
+    throw new Error(invalidJson(origin));
   }
 }
 

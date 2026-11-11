@@ -38,23 +38,31 @@ export interface ApplyOptions {
   app?: string;
 }
 
-/** Applies `plan` and returns notes for the designer: what it left out, and what it added on its own. */
-export async function applyPlan(plan: SyncPlan, options: ApplyOptions): Promise<string[]> {
+/** What an apply did that the designer should know: what it left out, and whether it added a Dark mode whose
+ * dark values a further sync fills in. */
+export interface Applied {
+  notes: string[];
+  darkValuesPending: boolean;
+}
+
+export async function applyPlan(plan: SyncPlan, options: ApplyOptions): Promise<Applied> {
   const notes: string[] = [];
+  let darkValuesPending = false;
   const { create, update, rename, deprecate } = plan.variables;
   // The collection is only touched when there's variable work, so a sync of text styles alone doesn't make an empty one.
   if ([create, update, rename, deprecate].some((list) => list.length > 0) || options.retryDark) {
-    await applyVariables(plan, options, notes);
+    darkValuesPending = await applyVariables(plan, options, notes);
   }
   await applyTextStyles(plan, notes);
-  return notes;
+  return { notes, darkValuesPending };
 }
 
 const noteDeleted = (notes: string[], name: string) =>
   notes.push(leftOut(name, "it was deleted after the plan was made"));
 
-async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: string[]): Promise<void> {
-  const { collection, modes } = await collectionFor(plan, options, notes);
+/** Applies the plan's variables, and says whether it added a Dark mode with dark values still to write. */
+async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: string[]): Promise<boolean> {
+  const { collection, modes, darkValuesPending } = await collectionFor(plan, options, notes);
   for (const token of plan.variables.create) {
     const resolvedType = typeof token.value === "number" ? "FLOAT" : "COLOR";
     const variable = figma.variables.createVariable(token.name, collection, resolvedType);
@@ -76,6 +84,7 @@ async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: stri
     if (variable) deprecate(variable);
     else noteDeleted(notes, name);
   }
+  return darkValuesPending;
 }
 
 async function applyTextStyles(plan: SyncPlan, notes: string[]): Promise<void> {
@@ -115,7 +124,7 @@ async function collectionFor(
   plan: SyncPlan,
   { retryDark, app }: ApplyOptions,
   notes: string[],
-): Promise<{ collection: VariableCollection; modes: Modes }> {
+): Promise<{ collection: VariableCollection; modes: Modes; darkValuesPending: boolean }> {
   const collection = (await syncedCollection()) ?? newCollection(app);
   const light = syncModes(collection).light ?? addLightMode(collection);
   const { create, update, rename } = plan.variables;
@@ -124,14 +133,14 @@ async function collectionFor(
     ...[...update, ...rename].map((entry) => entry.token.value),
   ];
   const wantsDark = values.some((value) => typeof value !== "number" && value.dark !== undefined);
+  let darkValuesPending = false;
   if ((wantsDark || retryDark) && !syncModes(collection).dark) {
     const added = addDarkMode(collection, notes);
     // A retry whose plan had its dark values left out has none to write yet.
-    if (added && !wantsDark)
-      notes.push("Dark mode added. Pick tokens.json again to fill in the dark values.");
+    darkValuesPending = added && !wantsDark;
   }
   const { dark } = syncModes(collection);
-  return { collection, modes: { light, ...(dark ? { dark } : {}) } };
+  return { collection, modes: { light, ...(dark ? { dark } : {}) }, darkValuesPending };
 }
 
 /** `rummy` as a title, `Rummy`; a name already capitalized, like `SenbaFold`, is kept. */

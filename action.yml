@@ -1,0 +1,55 @@
+name: Designmap
+description: Writes an app's design tokens from its code to tokens.json and DESIGN.md in the `out` folder, and commits them when they change. Runs on a push to a branch, and sets up Node 22 for the rest of the job.
+inputs:
+  app:
+    description: The app's folder, from the repo's root.
+    default: "."
+  out:
+    description: The folder to write tokens.json and DESIGN.md to, from the repo's root.
+    default: designmap
+runs:
+  using: composite
+  steps:
+    # It commits tokens.json, which only works on a push to a branch.
+    - name: Check it's a push to a branch
+      shell: bash
+      run: |
+        if [ "$GITHUB_EVENT_NAME" != "push" ] || [ "$GITHUB_REF_TYPE" != "branch" ]; then
+          echo "::error::Designmap commits tokens.json, so run it on a push to a branch, not on this $GITHUB_EVENT_NAME."
+          exit 1
+        fi
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+    - name: Build Designmap
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: corepack pnpm install --frozen-lockfile && corepack pnpm build
+    - name: Write the design tokens
+      shell: bash
+      env:
+        DESIGNMAP: ${{ github.action_path }}
+        APP: ${{ inputs.app }}
+        OUT: ${{ inputs.out }}
+      run: node "$DESIGNMAP/dist/cli/main.js" "$APP" --out "$OUT"
+    # [skip ci] keeps this commit from starting the workflow that made it.
+    - name: Commit them if they changed
+      shell: bash
+      env:
+        OUT: ${{ inputs.out }}
+        GIT_AUTHOR_NAME: github-actions[bot]
+        GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        GIT_COMMITTER_NAME: github-actions[bot]
+        GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      run: |
+        git add -- "$OUT"
+        if git diff --cached --quiet -- "$OUT"; then
+          echo "The design tokens haven't changed."
+          exit 0
+        fi
+        git commit -m "Update design tokens [skip ci]" -- "$OUT"
+        # Another push may have landed while this ran.
+        git pull --rebase --autostash origin "$GITHUB_REF_NAME"
+        git push origin "HEAD:$GITHUB_REF_NAME"

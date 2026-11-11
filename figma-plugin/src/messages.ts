@@ -27,8 +27,18 @@ export type PlanSummary = z.infer<typeof PlanSummary>;
 
 const id = z.number().int().nonnegative();
 
-/** `id` ties a plan to the file it was made from, so an Apply only ever applies the plan the designer is looking at. */
+/** Where in a GitHub repo the plugin reads tokens.json from; the token that reads it never reaches the window. */
+export const RepoSource = z.object({ repo: z.string(), branch: z.string(), path: z.string() });
+export type RepoSource = z.infer<typeof RepoSource>;
+
+/** `id` ties a plan to the request that made it, so an Apply only ever applies the plan the designer is looking at. */
 const ToPlugin = z.discriminatedUnion("type", [
+  /** The window has opened: say which repo is connected, and plan from it if one is. */
+  z.object({ type: z.literal("ready"), id }),
+  z.object({ type: z.literal("connect"), id, ...RepoSource.shape, token: z.string() }),
+  /** Plan from the connected repo's tokens.json as it is now. */
+  z.object({ type: z.literal("fetch"), id }),
+  z.object({ type: z.literal("disconnect") }),
   z.object({ type: z.literal("plan"), id, json: z.string() }),
   z.object({ type: z.literal("apply"), id }),
   z.object({ type: z.literal("close") }),
@@ -36,6 +46,7 @@ const ToPlugin = z.discriminatedUnion("type", [
 export type ToPlugin = z.infer<typeof ToPlugin>;
 
 const ToWindow = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("connection"), repo: RepoSource.nullable() }),
   z.object({ type: z.literal("plan"), id, summary: PlanSummary }),
   z.object({ type: z.literal("applied"), notes: names }),
   z.object({ type: z.literal("error"), message: z.string() }),

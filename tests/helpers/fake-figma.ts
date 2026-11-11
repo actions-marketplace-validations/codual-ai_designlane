@@ -25,6 +25,8 @@ function fakeFigma({
   unloadable = [],
 }: FakeOptions = {}) {
   const installed = { ...fonts };
+  /** What the plugin keeps on this computer, as `figma.clientStorage`. */
+  const stored = new Map<string, unknown>();
   let next = 1;
   const id = (prefix: string) => `${prefix}:${next++}`;
   const variables = new Map<string, ReturnType<typeof variable>>();
@@ -143,6 +145,11 @@ function fakeFigma({
         names.map((style) => ({ fontName: { family, style } })),
       ),
     closePlugin: () => {},
+    clientStorage: {
+      getAsync: async (key: string) => stored.get(key),
+      setAsync: async (key: string, value: unknown) => void stored.set(key, value),
+      deleteAsync: async (key: string) => void stored.delete(key),
+    },
     loadFontAsync: async (font: { family: string; style: string }) => {
       if (unloadable.includes(font.family)) throw new Error(`could not load ${font.family}`);
       loaded.add(fontKey(font));
@@ -152,7 +159,7 @@ function fakeFigma({
   const removeFamily = (family: string) => {
     delete installed[family];
   };
-  return { api, variables, collections, styles, removeFamily };
+  return { api, variables, collections, styles, stored, removeFamily };
 }
 
 /** Installs a fake as the `figma` global for the code under test, returning it to inspect. */

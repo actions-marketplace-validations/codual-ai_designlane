@@ -16,6 +16,11 @@
       h2 { font-size: 12px; margin: 0 0 4px; }
       ul { margin: 0; padding-left: 16px; max-height: 120px; overflow: auto; }
       #result { margin-top: 12px; }
+      label { display: block; margin-bottom: 8px; }
+      label input { display: block; width: 100%; box-sizing: border-box; margin-top: 2px; padding: 4px 6px; font: inherit; }
+      .hint { font-size: 11px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+      details { margin-top: 8px; }
       .note { color: var(--figma-color-text-warning); }
       .error { color: var(--figma-color-text-danger); }
       .actions { display: flex; gap: 8px; margin-top: 16px; }
@@ -33,8 +38,28 @@
   </head>
   <body>
     <h1>Sync from code</h1>
-    <p>Pick the tokens.json Designmap wrote for your app. You'll see what changes before anything does.</p>
-    <input id="file" type="file" accept=".json,application/json" aria-label="Pick tokens.json" />
+    <p>You'll see what changes before anything does.</p>
+    <section id="connect" hidden>
+      <p>Connect your app's GitHub repo once. After that, opening Designmap shows what changed in the code.</p>
+      <label>Repo <input id="repo" placeholder="owner/app" autocomplete="off" /></label>
+      <label>Branch <input id="branch" value="main" autocomplete="off" /></label>
+      <label>Path to tokens.json <input id="path" value="designmap/tokens.json" autocomplete="off" /></label>
+      <label>GitHub token <input id="token" type="password" autocomplete="off" /></label>
+      <p class="hint">
+        Make one at GitHub: Settings, Developer settings, Fine-grained tokens. Give it this repo only, with read-only
+        access to Contents. It stays on this computer.
+      </p>
+      <button id="connect-button" type="button" class="primary">Connect</button>
+    </section>
+    <section id="connected" class="row" hidden>
+      <span id="connected-to"></span>
+      <button id="refresh" type="button">Check again</button>
+      <button id="disconnect" type="button">Disconnect</button>
+    </section>
+    <details>
+      <summary>Or pick a tokens.json file</summary>
+      <input id="file" type="file" accept=".json,application/json" aria-label="Pick tokens.json" />
+    </details>
     <div id="result" role="status"></div>
     <div class="actions">
       <button id="apply" type="button" class="primary" disabled>Apply</button>

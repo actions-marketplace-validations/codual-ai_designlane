@@ -50,7 +50,7 @@ describe("syncing through the plugin's session", () => {
     await app.session({ type: "plan", id: 2, json: "not json" });
     expect(app.last()).toMatchObject({ type: "error", message: expect.stringMatching(/isn't valid JSON/) });
     await app.session({ type: "apply", id: 1 });
-    expect(app.last()).toEqual({ type: "error", message: "Pick a tokens.json first." });
+    expect(app.last()).toEqual({ type: "error", message: "There's no plan to apply yet." });
     expect(app.fake.variables.size).toBe(0);
   });
 

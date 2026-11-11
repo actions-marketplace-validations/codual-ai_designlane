@@ -1,6 +1,7 @@
-/** The plugin's window: reads the picked tokens.json, shows the plan in words, and asks the Figma side to apply it. */
+/** The plugin's window: connects a repo or reads a requested tokens.json, shows the plan in words, and asks the Figma
+ * side to apply it. */
 
-import { type PlanSummary, type ToPlugin, toWindow } from "./messages.js";
+import { type PlanSummary, type RepoSource, type ToPlugin, toWindow } from "./messages.js";
 
 /** The window's element with `id`, which ui.html must have, of the kind expected. */
 function element<T extends HTMLElement>(id: string, kind: new () => T): T {
@@ -9,15 +10,23 @@ function element<T extends HTMLElement>(id: string, kind: new () => T): T {
   return found;
 }
 
+const connectForm = element("connect", HTMLElement);
+const connected = element("connected", HTMLElement);
+const connectedTo = element("connected-to", HTMLSpanElement);
+const refresh = element("refresh", HTMLButtonElement);
+const disconnect = element("disconnect", HTMLButtonElement);
+const connectButton = element("connect-button", HTMLButtonElement);
 const file = element("file", HTMLInputElement);
 const result = element("result", HTMLDivElement);
 const apply = element("apply", HTMLButtonElement);
 
 const send = (message: ToPlugin) => parent.postMessage({ pluginMessage: message }, "*");
 
-/** The latest file picked, and the plan on screen: only that file's plan is shown, and only the plan shown applied. */
-let picked = 0;
+/** The latest plan asked for, and the plan on screen: only the latest is shown, and only the plan shown applied. */
+let requested = 0;
 let shown: number | undefined;
+/** The repo connected, named in the window's status lines. */
+let connectedRepo: string | undefined;
 
 /** A heading and a list, built from text only so a token's name can never be read as markup. */
 function section(title: string, items: readonly string[]): HTMLElement {
@@ -67,29 +76,65 @@ function showPlan(id: number, summary: PlanSummary): void {
   apply.disabled = !summary.applicable;
 }
 
-file.addEventListener("change", async () => {
-  const id = ++picked;
+/** Starts a new plan: what was on screen can no longer be applied. */
+function nextPlan(status: string): number {
   shown = undefined;
   apply.disabled = true;
-  result.replaceChildren();
+  result.replaceChildren(paragraph(status));
+  return ++requested;
+}
+
+const checking = (repo: string | undefined) => `Checking ${repo ?? "the repo"} for changes…`;
+
+/** Shows the repo connected, or the form to connect one. Any typed token is cleared: it's never shown again. */
+function showConnection(source: RepoSource | null): void {
+  connectedRepo = source?.repo;
+  connectForm.hidden = source !== null;
+  connected.hidden = source === null;
+  connectedTo.textContent = source ? `Connected to ${source.repo} (${source.branch})` : "";
+  element("token", HTMLInputElement).value = "";
+  result.replaceChildren(...(source ? [paragraph(checking(source.repo))] : []));
+}
+
+const field = (id: string) => element(id, HTMLInputElement).value.trim();
+
+connectButton.addEventListener("click", () => {
+  const repo = field("repo");
+  const id = nextPlan(`Connecting to ${repo}…`);
+  send({ type: "connect", id, repo, branch: field("branch"), path: field("path"), token: field("token") });
+});
+refresh.addEventListener("click", () => {
+  send({ type: "fetch", id: nextPlan(checking(connectedRepo)) });
+});
+disconnect.addEventListener("click", () => {
+  nextPlan("Disconnecting…");
+  send({ type: "disconnect" });
+});
+
+file.addEventListener("change", async () => {
   const chosen = file.files?.[0];
   if (!chosen) return;
-  result.replaceChildren(paragraph(`Reading ${chosen.name}…`));
+  const id = nextPlan(`Reading ${chosen.name}…`);
   try {
     const json = await chosen.text();
-    if (id === picked) send({ type: "plan", id, json });
+    if (id === requested) send({ type: "plan", id, json });
   } catch {
-    if (id === picked)
+    if (id === requested)
       result.replaceChildren(paragraph("That file couldn't be read. Pick it again.", "error"));
   } finally {
     // So picking the same file again, after it changed, plans it again.
     file.value = "";
   }
 });
+/** While an apply runs, nothing that would replace its result can be pressed. */
+function setApplying(applying: boolean): void {
+  for (const control of [file, refresh, disconnect, connectButton]) control.disabled = applying;
+}
+
 apply.addEventListener("click", () => {
   if (shown === undefined) return;
   apply.disabled = true;
-  file.disabled = true;
+  setApplying(true);
   send({ type: "apply", id: shown });
   shown = undefined;
 });
@@ -101,8 +146,9 @@ window.onmessage = (event: MessageEvent<unknown>) => {
     typeof data === "object" && data !== null && "pluginMessage" in data ? data.pluginMessage : undefined,
   );
   if (!message) return;
-  if (message.type === "plan" && message.id !== picked) return;
-  file.disabled = false;
+  if (message.type === "connection") return showConnection(message.repo);
+  if (message.type === "plan" && message.id !== requested) return;
+  setApplying(false);
   if (message.type === "plan") showPlan(message.id, message.summary);
   else if (message.type === "applied") {
     const done = message.notes.length
@@ -115,3 +161,5 @@ window.onmessage = (event: MessageEvent<unknown>) => {
     result.replaceChildren(paragraph(message.message, "error"));
   }
 };
+
+send({ type: "ready", id: nextPlan("Opening…") });
