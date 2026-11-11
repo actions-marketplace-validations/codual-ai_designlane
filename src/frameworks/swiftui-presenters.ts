@@ -4,15 +4,8 @@
  * larger view. `swiftui-usage.ts` walks out through a view's brackets and asks this file about each one.
  */
 
-import {
-  type BracketTree,
-  type CallOwner,
-  HEADER_CHARS,
-  identifierBefore,
-  type Owner,
-  ownerOf,
-  skipSpaceBack,
-} from "./swift-source.js";
+import { type BracketTree, identifierBefore, skipSpaceBack } from "./source-text.js";
+import { type CallOwner, HEADER_CHARS, type Owner, ownerOf } from "./swift-source.js";
 
 /** Closures whose content the app opens as a page: `.sheet { Page() }`, `WindowGroup { Page() }`, a split view's
  * columns, and the whole view of a widget or Live Activity. A plain `TabView`'s children only count with `.tabItem`

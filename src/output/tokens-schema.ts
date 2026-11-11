@@ -1,6 +1,7 @@
 /** The shape of the tokens.json Designmap writes: one schema the writer's output is typed by and a sync reads with. */
 
 import { z } from "zod";
+import { PLATFORMS } from "../scan/types.js";
 
 const Dimension = z.object({ value: z.number(), unit: z.literal("px") });
 
@@ -49,7 +50,11 @@ export const TextStyleGroup = z
 /** On the whole file: the app's name, and whether the scan couldn't read all of the app, so what's missing from it
  * may still be in the code. Files from before the app was named have no `app`. */
 const FileExtensions = z.object({
-  designmap: z.object({ app: z.string().optional(), partial: z.literal(true).optional() }),
+  designmap: z.object({
+    app: z.string().optional(),
+    partial: z.literal(true).optional(),
+    platform: z.enum(PLATFORMS).optional(),
+  }),
 });
 
 /** A group: its `$description`, and tokens of one kind under every other key. */

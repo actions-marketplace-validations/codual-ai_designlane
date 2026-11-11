@@ -1,6 +1,7 @@
 import type { ViewFacts } from "../scan/classify.js";
 import type { FrameworkPlugin } from "./plugin.js";
-import { lineNumbers, type StructDecl, structs } from "./swift-source.js";
+import { lineNumbers } from "./source-text.js";
+import { type StructDecl, structs } from "./swift-source.js";
 import { hostedViews } from "./swiftui-hosting.js";
 import { type SwiftSource, swiftSources } from "./swiftui-sources.js";
 import { swiftuiTokens } from "./swiftui-tokens.js";

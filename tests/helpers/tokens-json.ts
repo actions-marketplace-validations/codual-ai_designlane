@@ -20,6 +20,7 @@ export function tokensJson({
   radii = [],
   partial = false,
   app,
+  platform,
   styles = [],
 }: {
   colors?: ColorToken[];
@@ -29,13 +30,17 @@ export function tokensJson({
   partial?: boolean;
   /** The app's name, as the scan records it. */
   app?: string;
+  /** The platform the app's code is for, as the scan records it. */
+  platform?: "ios" | "android";
   styles?: StyleToken[];
 }) {
   const colorValue = (hex: string) => ({ colorSpace: "srgb", components: [0, 0, 0], hex });
   return JSON.stringify({
     $description: "test",
-    ...((partial || app) && {
-      $extensions: { designmap: { ...(app && { app }), ...(partial && { partial: true }) } },
+    ...((partial || app || platform) && {
+      $extensions: {
+        designmap: { ...(app && { app }), ...(partial && { partial: true }), ...(platform && { platform }) },
+      },
     }),
     ...(colors.length > 0 && {
       color: Object.fromEntries(

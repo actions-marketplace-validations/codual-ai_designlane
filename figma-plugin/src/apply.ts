@@ -1,5 +1,6 @@
 /** Makes a sync plan real in the Figma file: variables and text styles created, updated, renamed or deprecated. */
 
+import type { Platform } from "../../src/scan/types.js";
 import { type CodeToken, kindOf, type SyncPlan, type VariableValue } from "../../src/sync/plan.js";
 import type { TextValue } from "../../src/sync/tokens-file.js";
 import {
@@ -37,7 +38,12 @@ export interface ApplyOptions {
   retryDark: boolean;
   /** The app's name, which names a new collection: "Rummy (Designmap)". */
   app?: string;
+  /** The platform the app's code is for, whose code syntax shows how the code refers to each variable. */
+  platform?: Platform;
 }
+
+/** Figma's code syntax slot for each platform. */
+const CODE_SYNTAX = { ios: "iOS", android: "ANDROID" } as const;
 
 /** What an apply did that the designer should know: what it left out, and whether it added a Dark mode whose
  * dark values a further sync fills in. */
@@ -68,7 +74,7 @@ async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: stri
     const resolvedType = typeof token.value === "number" ? "FLOAT" : "COLOR";
     const variable = figma.variables.createVariable(token.name, collection, resolvedType);
     variable.scopes = NUMBER_SCOPES[kindOf(token.identity)] ?? COLOR_SCOPES;
-    mark(variable, token);
+    mark(variable, token, options.platform);
     setValue(variable, token.value, modes);
   }
   for (const { id, name, token } of [...plan.variables.update, ...plan.variables.rename]) {
@@ -77,7 +83,7 @@ async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: stri
       noteDeleted(notes, name);
       continue;
     }
-    mark(variable, token);
+    mark(variable, token, options.platform);
     setValue(variable, token.value, modes);
   }
   for (const { id, name } of plan.variables.deprecate) {
@@ -201,7 +207,7 @@ const isVariable = (item: Variable | BaseStyle): item is Variable => "resolvedTy
 
 /** Records the token's identity, so the next sync finds it whatever a designer calls it, and shows how the code
  * refers to it. A description a designer wrote is kept, and a token back in the code gets back what it had before. */
-function mark(item: Variable | BaseStyle, token: CodeToken<unknown>): void {
+function mark(item: Variable | BaseStyle, token: CodeToken<unknown>, platform: Platform = "ios"): void {
   const restored = isDeprecated(item);
   item.setSharedPluginData(NAMESPACE, KEYS.identity, token.identity);
   item.setSharedPluginData(NAMESPACE, KEYS.deprecated, "");
@@ -211,8 +217,11 @@ function mark(item: Variable | BaseStyle, token: CodeToken<unknown>): void {
     item.description = token.reference ? `${IN_THE_CODE}${token.reference}` : "";
   }
   if (!isVariable(item)) return;
-  if (token.reference) item.setVariableCodeSyntax("iOS", token.reference);
-  else if (item.codeSyntax.iOS) item.removeVariableCodeSyntax("iOS");
+  for (const [slotFor, slot] of Object.entries(CODE_SYNTAX)) {
+    // A file synced before for another platform drops that platform's name, which the code no longer has.
+    if (slotFor === platform && token.reference) item.setVariableCodeSyntax(slot, token.reference);
+    else if (item.codeSyntax[slot]) item.removeVariableCodeSyntax(slot);
+  }
   if (restored) item.hiddenFromPublishing = item.getSharedPluginData(NAMESPACE, KEYS.hiddenBefore) === "true";
 }
 

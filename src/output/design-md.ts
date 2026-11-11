@@ -6,10 +6,9 @@
 
 import path from "node:path";
 import { weightLabel } from "../scan/type-scale.js";
-import type { FrameworkScan, ScanResult } from "../scan/types.js";
+import { FRAMEWORK_NAMES, type FrameworkScan, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 import { dimensionKey, keyedColors, keyedStyles } from "./token-names.js";
 
-const FRAMEWORK_NAMES = { swiftui: "SwiftUI" } as const;
 /** How many colours and text styles are described one per line; the rest follow briefly. */
 const MOST_USED_LISTED = 12;
 /** How many screens and components the overview names; the rest are counted. */
@@ -112,7 +111,7 @@ function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
   const computed: string[] = [];
   for (const f of frameworks) {
     const lines: Listed[] = [];
-    for (const { style, key: own, values } of keyedStyles(f.tokens.typeStyles)) {
+    for (const { style, key: own, values } of keyedStyles(f.tokens.typeStyles, f.platforms[0])) {
       const key = `${prefix(f)}${own}`;
       const { fontFamily, fontSize, fontWeight } = values;
       if (!fontFamily && fontSize === undefined && fontWeight === undefined) {
@@ -196,14 +195,16 @@ export function toDesignMd(scan: ScanResult): string {
 }
 
 function overview({ frameworks }: ScanResult, name: string): string {
-  if (!frameworks.length)
-    return `Designmap found no ${Object.values(FRAMEWORK_NAMES).join(" or ")} code in ${name}.`;
+  if (!frameworks.length) return `Designmap found no ${SUPPORTED_FRAMEWORKS} code in ${name}.`;
   const views = frameworks.flatMap((f) => f.screens);
   const screens = views.filter((v) => v.kind === "screen").map((v) => v.name);
   const components = views.filter((v) => v.kind === "component").map((v) => v.name);
   const built = frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
+  const counted = frameworks.every((f) => f.screensRead === false)
+    ? ""
+    : `: ${plural(screens.length, "screen")} and ${plural(components.length, "component")}`;
   return [
-    `${name} is built with ${built}: ${plural(screens.length, "screen")} and ${plural(components.length, "component")}. Everything here was read from its code. Colours and text styles are listed most used first, with their use counts. Sizes are in points, written as px.`,
+    `${name} is built with ${built}${counted}. Everything here was read from its code. Colours and text styles are listed most used first, with their use counts. Sizes are in points (dp on Android), written as px.`,
     screens.length ? `Screens: ${named(screens)}.` : "",
     components.length ? `Components: ${named(components)}.` : "",
   ]

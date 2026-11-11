@@ -17,6 +17,8 @@ export interface ScanContext {
 export interface FrameworkFindings {
   views: ViewFacts[];
   tokens: DesignTokens;
+  /** Theme objects the code reads its design from that are defined outside the project, in a library. */
+  themesOutside?: string[];
 }
 
 /**
@@ -27,5 +29,7 @@ export interface FrameworkFindings {
 export interface FrameworkPlugin {
   id: FrameworkId;
   platforms: Platform[];
+  /** False while the plugin reads only design tokens, so no screens means none were looked for. */
+  screensRead?: false;
   scan(ctx: ScanContext): Promise<FrameworkFindings | undefined>;
 }

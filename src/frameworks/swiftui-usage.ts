@@ -5,7 +5,7 @@
  * a component. What each bracket means is decided in `swiftui-presenters.ts`; this file walks the code and counts.
  */
 
-import { type BracketTree, bracketTree } from "./swift-source.js";
+import { type BracketTree, bracketTree } from "./source-text.js";
 import { type AppViews, hasTabItem, isRouter, MAX_DEPTH, stepThrough } from "./swiftui-presenters.js";
 
 export interface ViewUsage {

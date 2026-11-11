@@ -1,6 +1,6 @@
 /** What tokens.json and DESIGN.md call each value, worked out once so both files name every token the same way. */
 
-import type { ColorToken, TypeStyle } from "../scan/types.js";
+import type { ColorToken, Platform, TypeStyle } from "../scan/types.js";
 
 /** A token's key: the app's own name, or `hex-33a854` for a colour the code never names. Anything but letters,
  * digits, `_` and `-` becomes `-`, since keys can't contain `.`, `{` or `}` in either format. */
@@ -115,13 +115,16 @@ function typeStyleKey(style: TypeStyle): string {
   return tokenKey(words.join("-"));
 }
 
-export function keyedStyles(styles: TypeStyle[]): KeyedStyle[] {
+/** The font each platform draws its system text in. */
+const SYSTEM_FONT: Record<Platform, string> = { ios: "SF Pro", android: "Roboto" };
+
+export function keyedStyles(styles: TypeStyle[], platform: Platform = "ios"): KeyedStyle[] {
   const reference = (s: TypeStyle) => s.reference ?? s.name;
   const identity = (s: TypeStyle) => `${reference(s)}|${s.name}`;
   return keysOf(styles, typeStyleKey, reference, identity, claimed()).map(({ item: style, key }) => {
     const weight = WEIGHT_NUMBERS[style.weight];
-    // The platform font on Apple platforms is SF Pro; an empty family (a helper mixing several) has none.
-    const family = style.family === "System" ? "SF Pro" : style.family;
+    // An empty family (a helper mixing several) has none.
+    const family = style.family === "System" ? SYSTEM_FONT[platform] : style.family;
     const values: TypeValues = {
       ...(family ? { fontFamily: family } : {}),
       ...(style.size !== undefined ? { fontSize: style.size } : {}),

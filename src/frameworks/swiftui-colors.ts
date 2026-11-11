@@ -1,7 +1,7 @@
 import { type ColorFindings, type NamedColor, nameKey } from "../scan/palette.js";
 import { normalizeHex, rgbToHex } from "../scan/tokens.js";
+import { lineNumbers } from "./source-text.js";
 import { memberOf, ownerAt, qualifiedOwnerAt } from "./swift-owners.js";
-import { lineNumbers } from "./swift-source.js";
 import { tokenIndexAt } from "./swift-tokens.js";
 import { matchesInCode, matchesPerLine, type SwiftSource, tokensOf } from "./swiftui-sources.js";
 

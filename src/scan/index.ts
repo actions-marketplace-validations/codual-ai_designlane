@@ -1,11 +1,12 @@
 import path from "node:path";
+import { compose } from "../frameworks/compose.js";
 import type { FrameworkPlugin, ScanContext } from "../frameworks/plugin.js";
 import { swiftui } from "../frameworks/swiftui.js";
 import { classify } from "./classify.js";
 import { listFiles, readText, type SourceFile } from "./files.js";
 import type { ScanResult, ScreenRef } from "./types.js";
 
-const frameworks: readonly FrameworkPlugin[] = [swiftui];
+const frameworks: readonly FrameworkPlugin[] = [swiftui, compose];
 
 async function createContext(root: string): Promise<ScanContext> {
   const abs = path.resolve(root);
@@ -41,6 +42,8 @@ export async function scanRepo(root: string): Promise<ScanResult> {
       platforms: plugin.platforms,
       screens: uniqueIds(classify(plugin.id, found.views)).sort(bestFirst),
       tokens: found.tokens,
+      ...(plugin.screensRead === false && { screensRead: false as const }),
+      ...(found.themesOutside?.length ? { themesOutside: found.themesOutside } : {}),
     });
   }
   return result;

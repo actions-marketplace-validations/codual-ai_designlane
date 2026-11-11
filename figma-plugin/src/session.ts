@@ -64,7 +64,11 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
     pending = {
       id,
       plan,
-      options: { retryDark: darkLeftOut, ...(tokens.app ? { app: tokens.app } : {}) },
+      options: {
+        retryDark: darkLeftOut,
+        ...(tokens.app ? { app: tokens.app } : {}),
+        ...(tokens.platform ? { platform: tokens.platform } : {}),
+      },
       origin,
       missingFonts,
     };

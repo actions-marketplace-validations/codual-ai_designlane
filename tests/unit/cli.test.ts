@@ -54,9 +54,21 @@ describe("designmap [dir]", () => {
   it("fails plainly when there's no SwiftUI code, or the arguments are wrong", async () => {
     const empty = await designmap(await tempDir({ "README.md": "hi" }));
     expect(empty.code).toBe(1);
-    expect(empty.error).toMatch(/^designmap: no SwiftUI code found in /);
+    expect(empty.error).toMatch(/^designmap: no SwiftUI or Jetpack Compose code found in /);
     expect((await designmap("--nope")).code).toBe(2);
     expect((await designmap("a", "b")).error).toContain("expected one folder, got 2");
+  });
+
+  it("refuses a project with both SwiftUI and Compose code rather than syncing only one of them", async () => {
+    const root = await tempDir({
+      ...APP,
+      "android/Theme.kt": "import androidx.compose.ui.graphics.Color\nval Brand = Color(0xFF6650A4)",
+    });
+    const { code, error } = await designmap(root, "--out", path.join(root, "out"));
+    expect(code).toBe(1);
+    expect(error).toContain(
+      "has SwiftUI and Jetpack Compose code, and syncing both into one Figma file isn't supported yet",
+    );
   });
 
   it("says when the path isn't a folder, rather than that it has no code", async () => {

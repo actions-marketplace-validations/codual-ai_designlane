@@ -18,6 +18,13 @@ describe("syncing variables into a Figma file", () => {
     ]).toEqual([["FRAME_FILL", "SHAPE_FILL", "TEXT_FILL", "STROKE_COLOR"], ["GAP"], ["CORNER_RADIUS"]]);
   });
 
+  it("records an Android app's code reference as Android code syntax, dropping an iOS one it wrote before", async () => {
+    const app = plugin();
+    await app.sync(tokensJson({ colors: [{ key: "surface", hex: "#18191c" }] }));
+    await app.sync(tokensJson({ colors: [{ key: "surface", hex: "#1c2333" }], platform: "android" }));
+    expect(variableNamed(app.fake, "color/surface").codeSyntax).toEqual({ ANDROID: "Theme.surface" });
+  });
+
   it("keeps the variable, and the name a designer gave it, for a token renamed in the code", async () => {
     const app = plugin();
     await app.sync(tokensJson({ colors: [{ key: "surface", hex: "#18191c" }] }));

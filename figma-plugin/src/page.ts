@@ -134,7 +134,7 @@ function colours(parent: FrameNode, collection: VariableCollection, tokens: Toke
     if (light) chip(chips, variable, collection, light);
     if (dark && value.dark) chip(chips, variable, collection, dark);
     text(card, variable.name, 13, HEADING_FONT);
-    const reference = variable.codeSyntax.iOS;
+    const reference = variable.codeSyntax.iOS ?? variable.codeSyntax.ANDROID;
     if (reference) text(card, reference, 12);
     text(card, [value.light.hex, value.dark?.hex].filter(Boolean).join(" / "), 12);
   }

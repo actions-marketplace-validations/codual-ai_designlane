@@ -145,9 +145,11 @@ describe("tokens.json", () => {
 });
 
 describe("tokens.json for syncing", () => {
-  it("records the app's name, so a sync can name what it makes after the app", async () => {
+  it("records the app's name and platform, so a sync names what it makes after the app and shows its code", async () => {
     const scan = await shop();
-    expect(toDesignTokens(scan).$extensions).toEqual({ designmap: { app: path.basename(scan.root) } });
+    expect(toDesignTokens(scan).$extensions).toEqual({
+      designmap: { app: path.basename(scan.root), platform: "ios" },
+    });
   });
 
   it("records how the code refers to each colour and text style, where it's from, and its uses", async () => {
@@ -310,7 +312,7 @@ describe("DESIGN.md", () => {
 
   it("says plainly when the app has no code it reads", async () => {
     const md = toDesignMd(await scanRepo(await tempDir({ "README.md": "hi" })));
-    expect(md).toContain("Designmap found no SwiftUI code in");
+    expect(md).toContain("Designmap found no SwiftUI or Jetpack Compose code in");
     expect(md).toContain('  - section: "colors"');
   });
 });

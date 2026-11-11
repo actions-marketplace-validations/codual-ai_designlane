@@ -1,6 +1,17 @@
-export type FrameworkId = "swiftui";
+export type FrameworkId = "swiftui" | "compose";
 
-export type Platform = "ios";
+/** The platforms an app's code can be for, as tokens.json records them. */
+export const PLATFORMS = ["ios", "android"] as const;
+export type Platform = (typeof PLATFORMS)[number];
+
+/** Each framework as people write it. */
+export const FRAMEWORK_NAMES: Record<FrameworkId, string> = {
+  swiftui: "SwiftUI",
+  compose: "Jetpack Compose",
+};
+
+/** `SwiftUI or Jetpack Compose`, for saying what an app without any of them is missing. */
+export const SUPPORTED_FRAMEWORKS = Object.values(FRAMEWORK_NAMES).join(" or ");
 
 export interface ScreenRef {
   /** `<framework>:<path>#<name>`, with `@<line>` added when a file declares the same name twice. */
@@ -74,6 +85,11 @@ export interface FrameworkScan {
   platforms: Platform[];
   screens: ScreenRef[];
   tokens: DesignTokens;
+  /** False when Designmap doesn't read this framework's screens yet. */
+  screensRead?: false;
+  /** Theme objects the code reads its design from that are defined outside the project (`ElementTheme`), so their
+   * tokens are in the library's own code. */
+  themesOutside?: string[];
 }
 
 export interface ScanResult {

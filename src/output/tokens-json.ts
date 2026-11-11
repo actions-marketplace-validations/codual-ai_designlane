@@ -2,7 +2,13 @@
 
 import path from "node:path";
 import type { z } from "zod";
-import type { ColorToken, DesignTokens, ScanResult } from "../scan/types.js";
+import {
+  type ColorToken,
+  type DesignTokens,
+  FRAMEWORK_NAMES,
+  type Platform,
+  type ScanResult,
+} from "../scan/types.js";
 import { dimensionKey, keyedColors, keyedStyles, tokenKey } from "./token-names.js";
 import type { ColorTokenEntry, ColorValue, DesignTokensFile } from "./tokens-schema.js";
 
@@ -53,9 +59,9 @@ function colors(tokens: DesignTokens): Group<"color"> {
 
 /** Each text style as a group of the values the code sets. A DTCG typography token needs line height and letter
  * spacing too, which the code rarely sets, so the values stand as their own tokens rather than as one invented. */
-function typography(tokens: DesignTokens): Group<"typography"> {
+function typography(tokens: DesignTokens, platform: Platform | undefined): Group<"typography"> {
   const group: Group<"typography"> = { $description: "Most used first" };
-  for (const { style, key, values } of keyedStyles(tokens.typeStyles)) {
+  for (const { style, key, values } of keyedStyles(tokens.typeStyles, platform)) {
     const { fontFamily, fontSize, fontWeight } = values;
     if (!fontFamily && fontSize === undefined && fontWeight === undefined) continue;
     group[key] = {
@@ -83,20 +89,34 @@ function dimensions(prefix: string, values: number[], description: string): Grou
 }
 
 /**
- * The tokens of the app's framework. Designmap reads one framework today, so the file has one app's groups; a scan
- * that couldn't read the whole app says so, so a sync doesn't take what it missed for what the code dropped.
+ * Why a project with more than one framework can't have one tokens.json yet, or undefined when it has one.
+ */
+export function twoFrameworks(scan: ScanResult): string | undefined {
+  if (scan.frameworks.length < 2) return undefined;
+  const both = scan.frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
+  return `${scan.root} has ${both} code, and syncing both into one Figma file isn't supported yet. Run designmap on each app's own folder.`;
+}
+
+/**
+ * The tokens of the app's framework; a project with two is refused rather than half-written. A scan that couldn't
+ * read the whole app says so, so a sync doesn't take what it missed for what the code dropped.
  */
 export function toDesignTokens(scan: ScanResult): DesignTokensFile {
+  const refused = twoFrameworks(scan);
+  if (refused) throw new Error(refused);
   const app = path.basename(scan.root);
   const partial = scan.truncated || scan.unreadable.length > 0;
   const file: DesignTokensFile = {
     $description: `Read from the code of ${app} by Designmap`,
     $extensions: { designmap: { app, ...(partial ? { partial: true } : {}) } },
   };
-  const tokens = scan.frameworks[0]?.tokens;
-  if (!tokens) return file;
+  const framework = scan.frameworks[0];
+  if (!framework) return file;
+  const { tokens } = framework;
+  const platform = framework.platforms[0];
+  if (platform && file.$extensions) file.$extensions.designmap.platform = platform;
   if (tokens.colors.length) file.color = colors(tokens);
-  const type = typography(tokens);
+  const type = typography(tokens, platform);
   if (Object.keys(type).length > 1) file.typography = type;
   if (tokens.fonts.length) {
     file.fontFamily = Object.fromEntries(

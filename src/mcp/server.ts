@@ -6,7 +6,8 @@ import { z } from "zod";
 import { toDesignMd } from "../output/design-md.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
-import type { ScanResult, ScreenRef } from "../scan/types.js";
+import { themesOutsideNote } from "../scan/themes-outside.js";
+import { type ScanResult, type ScreenRef, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 
 const INSTRUCTIONS = `Designmap reads this app's design system from its code.
 When you build or change UI in this app:
@@ -29,9 +30,9 @@ async function withApp(root: string, answer: (scan: ScanResult) => string): Prom
   try {
     if (!(await isFolder(root))) return failure(`Not a folder: ${root}. Pass the app's folder as repo.`);
     const scan = await scanRepo(root);
-    const gaps = readGaps(scan);
+    const gaps = [readGaps(scan), themesOutsideNote(scan)].filter(Boolean).join(" ");
     if (!scan.frameworks.length)
-      return failure([`No SwiftUI code found in ${root}.`, gaps].filter(Boolean).join(" "));
+      return failure([`No ${SUPPORTED_FRAMEWORKS} code found in ${root}.`, gaps].filter(Boolean).join(" "));
     return text(`${gaps ? `${gaps}\n\n` : ""}${answer(scan)}`);
   } catch (e) {
     return failure(`Designmap couldn't read ${root}: ${e instanceof Error ? e.message : String(e)}`);

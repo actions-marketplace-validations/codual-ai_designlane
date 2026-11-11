@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { twoFrameworks } from "../output/tokens-json.js";
 import { writeOutputs } from "../output/write.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
-import type { ScanResult } from "../scan/types.js";
+import { themesOutsideNote } from "../scan/themes-outside.js";
+import { FRAMEWORK_NAMES, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 
 const HELP = `designmap: map a mobile app's design system from its code
 
@@ -72,8 +74,13 @@ async function map(
   const scan = await scanRepo(root);
   const gaps = readGaps(scan);
   if (gaps) error(`designmap: ${gaps}`);
+  const outside = themesOutsideNote(scan);
+  if (outside) error(`designmap: ${outside}`);
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
-  if (scan.frameworks.length === 0) throw new UsageError(`no SwiftUI code found in ${scan.root}`, 1);
+  if (scan.frameworks.length === 0)
+    throw new UsageError(`no ${SUPPORTED_FRAMEWORKS} code found in ${scan.root}`, 1);
+  const refused = twoFrameworks(scan);
+  if (refused) throw new UsageError(refused, 1);
   out(summary(scan));
   const written = await writeOutputs(scan, values.out ? path.resolve(values.out) : undefined);
   out(`Wrote ${shown(written.tokens)}\n      ${shown(written.design)}`);
@@ -116,12 +123,16 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** What was found, in a few lines. */
 function summary(scan: ScanResult): string {
   return scan.frameworks
-    .map(({ screens, tokens }) => {
+    .map(({ framework, screens, screensRead, tokens }) => {
       const pages = screens.filter((s) => s.kind === "screen").length;
       const colours = tokens.colors.length;
       const styles = tokens.typeStyles.length;
+      const views =
+        screensRead === false
+          ? `${FRAMEWORK_NAMES[framework]} (screens aren't read yet)`
+          : `${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`;
       const lines = [
-        `${path.basename(scan.root)}: ${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`,
+        `${path.basename(scan.root)}: ${views}`,
         `  ${plural(colours, "colour")}, ${plural(styles, "text style")}`,
       ];
       const top = tokens.colors.slice(0, 3).map((c) => `${c.name} (${c.uses})`);

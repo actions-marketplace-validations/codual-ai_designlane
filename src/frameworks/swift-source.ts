@@ -3,24 +3,18 @@
  * out (keeping every newline, so line numbers still match), and struct bodies are found by matching braces.
  */
 
-/** The text with comments and string literals replaced by spaces, so only code is left; newlines and offsets are
- * kept, so positions still match the original file. */
-export function codeOnly(text: string): string {
-  const out = text.split("");
-  let i = 0;
-  while (i < text.length) {
-    const end = commentOrStringEnd(text, i);
-    if (end === undefined) {
-      i++;
-      continue;
-    }
-    for (let k = i; k < end; k++) if (out[k] !== "\n") out[k] = " ";
-    i = end;
-  }
-  return out.join("");
-}
+import {
+  type BracketTree,
+  blankCommentsAndStrings,
+  bracketTree,
+  identifierBefore,
+  skipSpaceBack,
+} from "./source-text.js";
 
-/** Where the comment or string starting at `i` ends, or undefined when none starts there. */
+/** Swift code with comments and string literals blanked (see `blankCommentsAndStrings`). */
+export const codeOnly = (text: string): string => blankCommentsAndStrings(text, commentOrStringEnd);
+
+/** Where the Swift comment or string starting at `i` ends, or undefined when none starts there. */
 export function commentOrStringEnd(text: string, i: number): number | undefined {
   if (text.startsWith("//", i)) return lineCommentEnd(text, i);
   if (text.startsWith("/*", i)) return blockCommentEnd(text, i);
@@ -179,73 +173,6 @@ function skipGenerics(text: string, start: number): number {
     else if (text[j] === "{") return j;
   }
   return text.length;
-}
-
-/** 1-based line numbers of ascending offsets, in one pass over the text. */
-export function lineNumbers(text: string, offsets: number[]): number[] {
-  let line = 1;
-  let at = 0;
-  return offsets.map((offset) => {
-    for (; at < offset; at++) if (text[at] === "\n") line++;
-    return line;
-  });
-}
-
-/** The offset just after the last non-space character before `end`. */
-export const skipSpaceBack = (code: string, end: number) => {
-  let j = end;
-  while (j > 0 && /\s/.test(code[j - 1] ?? "")) j--;
-  return j;
-};
-
-/** The word just before `end`, ignoring whitespace: `sheet` in `.sheet (`. */
-export function identifierBefore(code: string, end: number): string {
-  const stop = skipSpaceBack(code, end);
-  let start = stop;
-  while (start > 0 && /\w/.test(code[start - 1] ?? "")) start--;
-  return code.slice(start, stop);
-}
-
-export interface BracketTree {
-  /** For every offset, the `(` or `{` it sits directly inside, or -1. */
-  enclosing: Int32Array;
-  closeOf: Map<number, number>;
-  openOf: Map<number, number>;
-}
-
-/** Every `(` and `{` with its matching close, and for every offset the bracket it sits directly inside. A close
- * only pairs with its own kind of open, so an unbalanced `(` can't swallow a struct's `}`. */
-export function bracketTree(code: string): BracketTree {
-  const enclosing = new Int32Array(code.length).fill(-1);
-  const closeOf = new Map<number, number>();
-  const openOf = new Map<number, number>();
-  const stack: number[] = [];
-  for (let j = 0; j < code.length; j++) {
-    const c = code[j];
-    enclosing[j] = stack.at(-1) ?? -1;
-    if (c === "(" || c === "{") {
-      stack.push(j);
-    } else if (c === ")" || c === "}") {
-      const match = matchingOpen(code, stack, c === ")" ? "(" : "{");
-      if (match === -1) continue;
-      const open = stack[match] ?? -1;
-      stack.length = match;
-      closeOf.set(open, j);
-      openOf.set(j, open);
-    }
-  }
-  return { enclosing, closeOf, openOf };
-}
-
-/** How many unclosed brackets a close may skip to find its own kind; real code skips one or two at most. */
-const MAX_SKIPPED = 32;
-
-/** The stack index of the nearest open of kind `opener`, looking past at most `MAX_SKIPPED` others, or -1. */
-function matchingOpen(code: string, stack: number[], opener: string): number {
-  for (let k = stack.length - 1; k >= 0 && k >= stack.length - 1 - MAX_SKIPPED; k--) {
-    if (code[stack[k] ?? -1] === opener) return k;
-  }
-  return -1;
 }
 
 /** How far back to read for the code that owns a bracket, so hostile input stays fast. */

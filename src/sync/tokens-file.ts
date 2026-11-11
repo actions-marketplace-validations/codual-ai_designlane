@@ -12,6 +12,7 @@ import {
   type TextStyleGroup,
   TokensFile,
 } from "../output/tokens-schema.js";
+import type { Platform } from "../scan/types.js";
 
 /** A colour as `#rrggbb` with opacity 0–1. */
 export interface Rgba {
@@ -52,6 +53,8 @@ export interface SyncTokens {
   complete: boolean;
   /** The app's name, when the file records it. */
   app?: string;
+  /** The platform the app's code is for; files from before it was recorded are iOS. */
+  platform?: Platform;
 }
 
 /** The tokens in `json`, or an error saying what's wrong and what to do. */
@@ -78,6 +81,9 @@ export function readTokensFile(json: unknown): SyncTokens {
     radii,
     complete: file.data.$extensions?.designmap.partial !== true,
     ...(file.data.$extensions?.designmap.app ? { app: file.data.$extensions.designmap.app } : {}),
+    ...(file.data.$extensions?.designmap.platform
+      ? { platform: file.data.$extensions.designmap.platform }
+      : {}),
   };
 }
 
