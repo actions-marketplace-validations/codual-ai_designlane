@@ -46,8 +46,11 @@ export const TextStyleGroup = z
     "a text style sets no values",
   );
 
-/** On the whole file: the scan couldn't read all of the app, so what's missing from it may still be in the code. */
-const FileExtensions = z.object({ designmap: z.object({ partial: z.literal(true) }) });
+/** On the whole file: the app's name, and whether the scan couldn't read all of the app, so what's missing from it
+ * may still be in the code. Files from before the app was named have no `app`. */
+const FileExtensions = z.object({
+  designmap: z.object({ app: z.string().optional(), partial: z.literal(true).optional() }),
+});
 
 /** A group: its `$description`, and tokens of one kind under every other key. */
 const groupOf = <T extends z.ZodType>(token: T) =>

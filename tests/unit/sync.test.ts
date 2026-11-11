@@ -213,7 +213,7 @@ describe("planning a sync", () => {
     const plan = planSync(await tokensOf(APP), { variables: [], textStyles: [] });
     expect(plan.variables.create.map((v) => v.name)).toEqual([
       "color/brand",
-      "color/hex-ff000080",
+      "color/Unnamed/ff000080",
       "color/accent",
       "spacing/8",
       "radius/12",

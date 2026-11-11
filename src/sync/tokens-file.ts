@@ -50,6 +50,8 @@ export interface SyncTokens {
   radii: number[];
   /** The scan read the whole app, so a token missing here is one the code dropped. */
   complete: boolean;
+  /** The app's name, when the file records it. */
+  app?: string;
 }
 
 /** The tokens in `json`, or an error saying what's wrong and what to do. */
@@ -75,6 +77,7 @@ export function readTokensFile(json: unknown): SyncTokens {
     spacing,
     radii,
     complete: file.data.$extensions?.designmap.partial !== true,
+    ...(file.data.$extensions?.designmap.app ? { app: file.data.$extensions.designmap.app } : {}),
   };
 }
 

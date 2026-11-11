@@ -53,11 +53,16 @@ export interface SyncPlan {
   textStyles: Plan<TextValue>;
 }
 
+/** The group for colours the code uses without naming them, so a designer sees them apart from the named ones. */
+const UNNAMED = "Unnamed";
+
 export function planSync(tokens: SyncTokens, file: DesignFile): SyncPlan {
   const variables: CodeToken<VariableValue>[] = [
     ...tokens.colors.map((c) => ({
       identity: c.identity,
-      name: `color/${c.key}`,
+      name: c.identity.startsWith("color:#")
+        ? `color/${UNNAMED}/${c.key.replace(/^hex-/, "")}`
+        : `color/${c.key}`,
       value: c.dark ? { light: c.light, dark: c.dark } : { light: c.light },
       ...(c.reference ? { reference: c.reference } : {}),
     })),
@@ -170,7 +175,8 @@ function renames<F, C>(
   return pairs;
 }
 
-const kindOf = (identity: string) => identity.slice(0, identity.indexOf(":"));
+/** What kind of token an identity names: `color`, `spacing`, `radius` or `type`. */
+export const kindOf = (identity: string) => identity.slice(0, identity.indexOf(":"));
 
 function unique(name: string, names: Set<string>): string {
   let candidate = name;
@@ -182,7 +188,8 @@ function unique(name: string, names: Set<string>): string {
 /** Opacity a design file stores as a long fraction and tokens.json rounds to three places: closer than this is equal. */
 const ALPHA_TOLERANCE = 0.002;
 
-const sameRgba = (a: Rgba | undefined, b: Rgba | undefined) =>
+/** Whether two colours match, allowing `ALPHA_TOLERANCE` in opacity. */
+export const sameRgba = (a: Rgba | undefined, b: Rgba | undefined) =>
   a === b ||
   (!!a &&
     !!b &&

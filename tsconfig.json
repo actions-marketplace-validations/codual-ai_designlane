@@ -17,5 +17,6 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["src", "tests", "vitest.config.ts"]
+  "include": ["src", "tests", "vitest.config.ts"],
+  "exclude": ["tests/figma", "tests/helpers/figma-plugin.ts"]
 }

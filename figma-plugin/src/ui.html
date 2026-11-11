@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 12px/1.5 Inter, system-ui, sans-serif;
+        color: var(--figma-color-text);
+        background: var(--figma-color-bg);
+      }
+      h1 { font-size: 14px; margin: 0 0 4px; }
+      p { margin: 0 0 12px; color: var(--figma-color-text-secondary); }
+      section { margin-bottom: 12px; }
+      h2 { font-size: 12px; margin: 0 0 4px; }
+      ul { margin: 0; padding-left: 16px; max-height: 120px; overflow: auto; }
+      #result { margin-top: 12px; }
+      .note { color: var(--figma-color-text-warning); }
+      .error { color: var(--figma-color-text-danger); }
+      .actions { display: flex; gap: 8px; margin-top: 16px; }
+      button {
+        font: inherit;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--figma-color-border);
+        background: var(--figma-color-bg);
+        color: var(--figma-color-text);
+      }
+      button.primary { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border: none; }
+      button:disabled { opacity: 0.5; }
+    </style>
+  </head>
+  <body>
+    <h1>Sync from code</h1>
+    <p>Pick the tokens.json Designmap wrote for your app. You'll see what changes before anything does.</p>
+    <input id="file" type="file" accept=".json,application/json" aria-label="Pick tokens.json" />
+    <div id="result" role="status"></div>
+    <div class="actions">
+      <button id="apply" type="button" class="primary" disabled>Apply</button>
+      <button id="close" type="button">Close</button>
+    </div>
+    <script>
+      __UI_SCRIPT__
+    </script>
+  </body>
+</html>

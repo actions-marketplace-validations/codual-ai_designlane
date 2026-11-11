@@ -145,6 +145,11 @@ describe("tokens.json", () => {
 });
 
 describe("tokens.json for syncing", () => {
+  it("records the app's name, so a sync can name what it makes after the app", async () => {
+    const scan = await shop();
+    expect(toDesignTokens(scan).$extensions).toEqual({ designmap: { app: path.basename(scan.root) } });
+  });
+
   it("records how the code refers to each colour and text style, where it's from, and its uses", async () => {
     const tokens = toDesignTokens(await shop());
     const color = tokens.color as Record<string, { $extensions: unknown }>;

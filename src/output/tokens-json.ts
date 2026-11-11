@@ -87,10 +87,12 @@ function dimensions(prefix: string, values: number[], description: string): Grou
  * that couldn't read the whole app says so, so a sync doesn't take what it missed for what the code dropped.
  */
 export function toDesignTokens(scan: ScanResult): DesignTokensFile {
+  const app = path.basename(scan.root);
+  const partial = scan.truncated || scan.unreadable.length > 0;
   const file: DesignTokensFile = {
-    $description: `Read from the code of ${path.basename(scan.root)} by Designmap`,
+    $description: `Read from the code of ${app} by Designmap`,
+    $extensions: { designmap: { app, ...(partial ? { partial: true } : {}) } },
   };
-  if (scan.truncated || scan.unreadable.length > 0) file.$extensions = { designmap: { partial: true } };
   const tokens = scan.frameworks[0]?.tokens;
   if (!tokens) return file;
   if (tokens.colors.length) file.color = colors(tokens);
