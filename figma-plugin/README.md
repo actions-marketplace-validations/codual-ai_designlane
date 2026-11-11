@@ -40,6 +40,11 @@ The plugin creates a variable collection named after the app, such as **Rummy (D
 one records the token's identity, so the next sync finds it under any name, and shows how the code refers to it
 (`Theme.surface`) as a variable's iOS code syntax and in its description.
 
+It also draws the design system on a page of the same name: a swatch for each colour, linked to its variable, in
+Light and, when it differs, Dark; a sample of each text style, largest first; and the spacing and radius scales. The
+page is redrawn on every Apply. Only Designmap's own frame changes, where you last moved it, so anything you add to
+the page outside that frame stays; anything added inside it is replaced.
+
 On each sync:
 
 - **New** tokens are created, named from the code.

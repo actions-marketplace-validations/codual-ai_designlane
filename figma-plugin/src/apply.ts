@@ -4,6 +4,7 @@ import { type CodeToken, kindOf, type SyncPlan, type VariableValue } from "../..
 import type { TextValue } from "../../src/sync/tokens-file.js";
 import {
   availableFontStyles,
+  designmapName,
   isDeprecated,
   KEYS,
   NAMESPACE,
@@ -143,14 +144,9 @@ async function collectionFor(
   return { collection, modes: { light, ...(dark ? { dark } : {}) }, darkValuesPending };
 }
 
-/** `rummy` as a title, `Rummy`; a name already capitalized, like `SenbaFold`, is kept. */
-const capitalized = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
-
 /** A new collection, named for the app and for Designmap; a designer may rename it, since a sync finds it by its mark. */
 function newCollection(app: string | undefined): VariableCollection {
-  const collection = figma.variables.createVariableCollection(
-    app ? `${capitalized(app)} (Designmap)` : "Designmap",
-  );
+  const collection = figma.variables.createVariableCollection(designmapName(app));
   collection.setSharedPluginData(NAMESPACE, KEYS.collection, SYNCED_COLLECTION);
   collection.renameMode(collection.defaultModeId, "Light");
   collection.setSharedPluginData(NAMESPACE, KEYS.lightMode, collection.defaultModeId);

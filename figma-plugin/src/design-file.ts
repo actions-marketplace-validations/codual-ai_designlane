@@ -18,12 +18,23 @@ export const KEYS = {
   deprecated: "deprecated",
   descriptionBefore: "descriptionBefore",
   hiddenBefore: "hiddenBefore",
+  /** On the page Designmap draws the design system on, and on the frame it draws there. */
+  page: "page",
+  sheet: "sheet",
 } as const;
 export const SYNCED_COLLECTION = "tokens";
+
+/** The app's name as a title, `Rummy`; a name already capitalized, like `SenbaFold`, is kept. */
+export const appTitle = (app: string) => `${app.charAt(0).toUpperCase()}${app.slice(1)}`;
+
+/** What Designmap names what it makes for an app: "Rummy (Designmap)". */
+export const designmapName = (app: string | undefined) =>
+  app ? `${appTitle(app)} (Designmap)` : "Designmap";
 /** How many variables deep a value pointing at another variable is followed before it's taken as unreadable. */
 const MAX_ALIAS_DEPTH = 10;
 
-const identityOf = (item: PluginDataMixin) => item.getSharedPluginData(NAMESPACE, KEYS.identity) || undefined;
+export const identityOf = (item: PluginDataMixin) =>
+  item.getSharedPluginData(NAMESPACE, KEYS.identity) || undefined;
 export const isDeprecated = (item: PluginDataMixin) =>
   item.getSharedPluginData(NAMESPACE, KEYS.deprecated) === "true";
 
@@ -104,7 +115,7 @@ function entryOf(item: { id: string; name: string } & PluginDataMixin) {
 const UNREADABLE = { color: { light: { hex: "", alpha: Number.NaN } }, number: Number.NaN };
 
 /** A variable's value as the sync compares it: a colour in light (and dark) mode, or a number, the same in both. */
-async function syncedValue(variable: Variable, modes: SyncModes): Promise<VariableValue> {
+export async function syncedValue(variable: Variable, modes: SyncModes): Promise<VariableValue> {
   const isNumber = variable.resolvedType === "FLOAT";
   const light = modes.light ? await resolve(variable, modes.light) : undefined;
   const dark = modes.dark ? await resolve(variable, modes.dark) : undefined;

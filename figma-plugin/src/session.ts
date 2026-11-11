@@ -14,7 +14,15 @@ import {
 import { availableFontStyles, darkUnavailable, readDesignFile, textStyleFonts } from "./design-file.js";
 import { fetchTokensFile } from "./github.js";
 import { type PlanSummary, type RepoSource, type ToWindow, toPlugin } from "./messages.js";
-import { darkModeAdded, invalidJson, missingFont, type Origin, stoppedPartway } from "./notes.js";
+import {
+  darkModeAdded,
+  invalidJson,
+  missingFont,
+  type Origin,
+  pageNotRedrawn,
+  stoppedPartway,
+} from "./notes.js";
+import { drawDesignSystemPage } from "./page.js";
 import { describeFont, type FontValue, fontFor, hasOwnDark } from "./values.js";
 
 interface Pending {
@@ -78,9 +86,13 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
     pending = undefined;
     try {
       const { notes, darkValuesPending } = await applyPlan(plan, options);
+      const pageNotes = await drawDesignSystemPage(options.app).then(
+        () => [],
+        (error: unknown) => [pageNotRedrawn(messageOf(error))],
+      );
       const missingFontNotes = missingFonts.map(({ name, font }) => missingFont(name, font));
       const darkNotes = darkValuesPending ? [darkModeAdded(origin)] : [];
-      send({ type: "applied", notes: [...missingFontNotes, ...notes, ...darkNotes] });
+      send({ type: "applied", notes: [...missingFontNotes, ...notes, ...darkNotes, ...pageNotes] });
     } catch (error) {
       throw new Error(stoppedPartway(origin, messageOf(error)));
     }

@@ -10,6 +10,80 @@ function sharedData() {
   };
 }
 
+/** A page, frame, shape or text in the fake file: what the plugin sets on it is kept to read back. */
+export class FakeNode {
+  name = "";
+  characters = "";
+  fills: unknown;
+  cornerRadius = 0;
+  fontName: unknown;
+  fontSize = 12;
+  layoutMode = "NONE";
+  layoutWrap = "NO_WRAP";
+  itemSpacing = 0;
+  counterAxisSpacing = 0;
+  primaryAxisSizingMode = "AUTO";
+  counterAxisSizingMode = "AUTO";
+  counterAxisAlignItems = "MIN";
+  layoutPositioning = "AUTO";
+  clipsContent = true;
+  paddingTop = 0;
+  paddingRight = 0;
+  paddingBottom = 0;
+  paddingLeft = 0;
+  x = 0;
+  y = 0;
+  width = 100;
+  height = 100;
+  children: FakeNode[] = [];
+  parent: FakeNode | undefined;
+  /** The mode each collection is shown in here, by the collection's id. */
+  explicitModes: Record<string, string> = {};
+  textStyleId = "";
+  private readonly data = new Map<string, string>();
+
+  constructor(readonly type: string) {}
+
+  getSharedPluginData(namespace: string, key: string) {
+    return this.data.get(`${namespace}/${key}`) ?? "";
+  }
+  setSharedPluginData(namespace: string, key: string, value: string) {
+    this.data.set(`${namespace}/${key}`, value);
+  }
+  appendChild(child: FakeNode) {
+    this.insertChild(this.children.length, child);
+  }
+  insertChild(index: number, child: FakeNode) {
+    child.remove();
+    child.parent = this;
+    this.children.splice(index, 0, child);
+  }
+  findAllWithCriteria({ sharedPluginData }: { sharedPluginData: { namespace: string; keys: string[] } }) {
+    return this.descendants().filter((node) =>
+      sharedPluginData.keys.some((key) => node.getSharedPluginData(sharedPluginData.namespace, key) !== ""),
+    );
+  }
+  remove() {
+    if (this.parent) this.parent.children = this.parent.children.filter((node) => node !== this);
+    this.parent = undefined;
+  }
+  resize(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
+  setExplicitVariableModeForCollection(collection: { id: string }, modeId: string) {
+    this.explicitModes[collection.id] = modeId;
+  }
+  async setTextStyleIdAsync(styleId: string) {
+    this.textStyleId = styleId;
+  }
+  async loadAsync() {}
+  /** Every node under this one, depth first. */
+  descendants(): FakeNode[] {
+    return this.children.flatMap((child) => [child, ...child.descendants()]);
+  }
+}
+
 export interface FakeOptions {
   /** How many modes a collection may have, as on Figma's plans. */
   maxModes?: number;
@@ -129,13 +203,27 @@ function fakeFigma({
     return self;
   }
 
+  const root = new FakeNode("DOCUMENT");
   const api = {
+    root,
+    createPage: () => {
+      const page = new FakeNode("PAGE");
+      root.appendChild(page);
+      return page;
+    },
+    createFrame: () => new FakeNode("FRAME"),
+    createRectangle: () => new FakeNode("RECTANGLE"),
+    createText: () => new FakeNode("TEXT"),
     variables: {
       getLocalVariableCollectionsAsync: async () => [...collections.values()],
       getVariableByIdAsync: async (key: string) => variables.get(key) ?? null,
       getVariableCollectionByIdAsync: async (key: string) => collections.get(key) ?? null,
       createVariableCollection: collection,
       createVariable: variable,
+      setBoundVariableForPaint: (paint: object, field: string, bound: { id: string }) => ({
+        ...paint,
+        boundVariables: { [field]: { type: "VARIABLE_ALIAS", id: bound.id } },
+      }),
     },
     getLocalTextStylesAsync: async () => [...styles.values()],
     getStyleByIdAsync: async (key: string) => styles.get(key) ?? null,
@@ -159,7 +247,7 @@ function fakeFigma({
   const removeFamily = (family: string) => {
     delete installed[family];
   };
-  return { api, variables, collections, styles, stored, removeFamily };
+  return { api, variables, collections, styles, stored, root, removeFamily };
 }
 
 /** Installs a fake as the `figma` global for the code under test, returning it to inspect. */

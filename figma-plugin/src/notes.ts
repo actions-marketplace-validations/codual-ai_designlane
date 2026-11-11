@@ -22,3 +22,7 @@ export const invalidJson = (origin: Origin) =>
   origin === "repo"
     ? "The repo's tokens.json isn't valid JSON. Let CI write it again, then press Check again."
     : "This file isn't valid JSON. Pick the tokens.json Designmap wrote, or run designmap again.";
+
+/** The note for a sync that worked but couldn't redraw its design system page. */
+export const pageNotRedrawn = (reason: string) =>
+  `The variables and text styles are synced, but the design system page couldn't be redrawn. (${reason})`;
