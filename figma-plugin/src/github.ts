@@ -20,6 +20,8 @@ export async function fetchTokensFile({ repo, branch, path, token }: Connection)
         Authorization: `Bearer ${token}`,
         "X-GitHub-Api-Version": API_VERSION,
       },
+      // GitHub lets a client reuse its answer for a minute, which would plan from the tokens.json before CI's latest.
+      cache: "no-store",
     });
   } catch {
     throw new Error("Couldn't reach GitHub. Check your internet connection, then try again.");

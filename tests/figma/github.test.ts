@@ -7,7 +7,7 @@ const connection = { ...repo, token: "github_pat_secret" };
 
 /** GitHub as the plugin's `fetch` sees it: answering every request with `status`, and `body` when it's found. */
 function github(status: number, body = "", headers: Record<string, string> = {}) {
-  const fetch = vi.fn(async () => ({
+  const fetch = vi.fn(async (_url: string, _init?: FetchOptions) => ({
     ok: status === 200,
     status,
     statusText: status === 200 ? "OK" : "Error",
@@ -248,5 +248,14 @@ describe("syncing from a GitHub repo", () => {
       type: "applied",
       notes: ["Dark mode added. Press Check again to fill in the dark values."],
     });
+  });
+
+  it("always asks GitHub for the latest tokens.json, never a copy it kept", async () => {
+    const app = plugin();
+    const fetch = github(200, tokensJson({ spacing: [8] }));
+    await app.session({ type: "connect", id: 1, ...connection });
+    await app.session({ type: "fetch", id: 2 });
+    expect(fetch.mock.calls).toHaveLength(2);
+    expect(fetch.mock.calls.every(([, init]) => init?.cache === "no-store")).toBe(true);
   });
 });
