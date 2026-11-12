@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { codeOnly, withoutPreviews } from "../../src/frameworks/swift-source.js";
 import { swiftType } from "../../src/frameworks/swiftui-type.js";
 import { scanRepo } from "../../src/scan/index.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 async function tokens(code: string, extra: Record<string, string> = {}) {
@@ -122,20 +123,24 @@ describe("the type scale", () => {
     expect(type).toHaveLength(25);
   });
 
-  it("reads 512KB hostile files of every shape quickly", async () => {
-    const fill = (unit: string) => unit.repeat(Math.floor((512 * 1024) / unit.length));
-    const started = performance.now();
-    await tokens("", {
-      "App/A.swift": fill("T.a "),
-      "App/B.swift": fill(".font(.body)"),
-      "App/C.swift": fill("f(font: .title) "),
-      "App/D.swift": fill("static var a: Font { .title }\n"),
-      "App/E.swift": `${fill("static var a: Font {").slice(0, 256 * 1024)}${"}".repeat(10_000)}`,
-    });
-    expect(performance.now() - started).toBeLessThan(20_000);
-  }, 60_000);
+  speedIt(
+    "reads 512KB hostile files of every shape quickly",
+    async () => {
+      const fill = (unit: string) => unit.repeat(Math.floor((512 * 1024) / unit.length));
+      const started = performance.now();
+      await tokens("", {
+        "App/A.swift": fill("T.a "),
+        "App/B.swift": fill(".font(.body)"),
+        "App/C.swift": fill("f(font: .title) "),
+        "App/D.swift": fill("static var a: Font { .title }\n"),
+        "App/E.swift": `${fill("static var a: Font {").slice(0, 256 * 1024)}${"}".repeat(10_000)}`,
+      });
+      expect(performance.now() - started).toBeLessThan(20_000);
+    },
+    60_000,
+  );
 
-  it("stays fast on a hostile file", async () => {
+  speedIt("stays fast on a hostile file", async () => {
     const started = performance.now();
     await tokens("", {
       "App/A.swift": ".font(.system(size: 1".repeat(20_000),
@@ -770,11 +775,15 @@ describe("helpers in this rebuild's reviews", () => {
 });
 
 describe("font helpers on broken code", () => {
-  it("finishes on unmatched brackets in a helper's parameters", async () => {
-    const code =
-      "import SwiftUI\nlet x = [1\nextension Font {\n static func brand(a: [Int, b: [String) -> Font { .system(size: 1) }\n}";
-    const started = performance.now();
-    await scanRepo(await tempDir({ "App/Fonts.swift": code }));
-    expect(performance.now() - started).toBeLessThan(5_000);
-  }, 10_000);
+  speedIt(
+    "finishes on unmatched brackets in a helper's parameters",
+    async () => {
+      const code =
+        "import SwiftUI\nlet x = [1\nextension Font {\n static func brand(a: [Int, b: [String) -> Font { .system(size: 1) }\n}";
+      const started = performance.now();
+      await scanRepo(await tempDir({ "App/Fonts.swift": code }));
+      expect(performance.now() - started).toBeLessThan(5_000);
+    },
+    10_000,
+  );
 });

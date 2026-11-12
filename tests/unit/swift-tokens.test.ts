@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { swiftTokens } from "../../src/frameworks/swift-tokens.js";
+import { speedIt } from "../helpers/speed.js";
 
 const texts = (code: string) => swiftTokens(code).tokens.map((t) => t.text);
 const kinds = (code: string) => swiftTokens(code).tokens.map((t) => `${t.kind}:${t.text}`);
@@ -108,7 +109,7 @@ describe("brackets", () => {
 });
 
 describe("hostile input", () => {
-  it("stays fast on long runs, unclosed strings and comments, and deep brackets", () => {
+  speedIt("stays fast on long runs, unclosed strings and comments, and deep brackets", () => {
     for (const code of [
       "+".repeat(500_000),
       `"${"a".repeat(500_000)}`,

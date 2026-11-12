@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { codeOnly, structs, withoutPreviews } from "../../src/frameworks/swift-source.js";
+import { speedIt } from "../helpers/speed.js";
 
 describe("codeOnly", () => {
   it("blanks comments and strings but keeps code, newlines and offsets", () => {
@@ -60,7 +61,7 @@ describe("structs", () => {
     expect(b?.close).toBe(text.length - 1);
   });
 
-  it("stays fast on pathological input", () => {
+  speedIt("stays fast on pathological input", () => {
     const hostile = [
       `${"(".repeat(100_000)}${"}".repeat(100_000)}`,
       "struct A: x ".repeat(40_000),

@@ -7,6 +7,7 @@ import {
   subexpressions,
 } from "../../src/frameworks/swift-expressions.js";
 import { swiftTokens } from "../../src/frameworks/swift-tokens.js";
+import { speedIt } from "../helpers/speed.js";
 
 /** The expression at the start of `code`, written back compactly so tests read like the Swift they check. */
 function read(code: string): string {
@@ -397,7 +398,7 @@ describe("compiler directives", () => {
 });
 
 describe("hostile input", () => {
-  it("reads any 512KB hostile file quickly, from its start or its middle", () => {
+  speedIt("reads any 512KB hostile file quickly, from its start or its middle", () => {
     for (const code of [
       fill(".font(a)", "x"),
       fill("a<a"),
@@ -416,7 +417,7 @@ describe("hostile input", () => {
     }
   });
 
-  it("reads every call's arguments in a 512KB file quickly, hostile or not", () => {
+  speedIt("reads every call's arguments in a 512KB file quickly, hostile or not", () => {
     for (const code of [
       fill(".font(.title)", "Text(a)"),
       fill('Text("a").font(.system(size: 17, weight: .bold))\n'),
@@ -437,7 +438,7 @@ describe("hostile input", () => {
     expect(expressionAt(swiftTokens(`x${".a".repeat(100)}`), 0)?.kind).toBe("member");
   });
 
-  it("stays fast and doesn't overflow on deep nesting, long chains or unclosed brackets", () => {
+  speedIt("stays fast and doesn't overflow on deep nesting, long chains or unclosed brackets", () => {
     for (const code of [
       "f(".repeat(50_000),
       `${"(".repeat(20_000)}x${")".repeat(20_000)}`,

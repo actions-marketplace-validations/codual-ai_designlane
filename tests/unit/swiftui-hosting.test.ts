@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hostedViews } from "../../src/frameworks/swiftui-hosting.js";
 import { scanRepo } from "../../src/scan/index.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 /** A view laid out like a page (navigation, a list, a title): a screen on its own, unless the app shows it as part of
@@ -239,21 +240,25 @@ describe("hosting on hostile input", () => {
     return large / Math.max(small, 0.002);
   };
 
-  it("grows linearly with long runs of spaces in a class header", () => {
+  speedIt("grows linearly with long runs of spaces in a class header", () => {
     expect(growth((n) => `class A${" ".repeat(n * 16)}`)).toBeLessThan(8);
   });
 
-  it("grows linearly with many hosting sites reusing one name", () => {
-    // Large enough for a lookup that rereads every earlier assignment to stand out from the reading itself.
-    expect(growth((n) => "let page = Details()\n_ = H(rootView: page)\n".repeat(n * 8))).toBeLessThan(8);
-  }, 60_000);
+  speedIt(
+    "grows linearly with many hosting sites reusing one name",
+    () => {
+      // Large enough for a lookup that rereads every earlier assignment to stand out from the reading itself.
+      expect(growth((n) => "let page = Details()\n_ = H(rootView: page)\n".repeat(n * 8))).toBeLessThan(8);
+    },
+    60_000,
+  );
 
-  it("grows linearly with deeply nested closures, each assigned and hosting a view", () => {
+  speedIt("grows linearly with deeply nested closures, each assigned and hosting a view", () => {
     const level = "x = { let h = UIHostingController(rootView: Details())\n";
     expect(growth((n) => `var a = { ${level.repeat(n)}${"}()".repeat(n)} }()`)).toBeLessThan(8);
   });
 
-  it("grows linearly with deeply nested blocks each adding its own controller", () => {
+  speedIt("grows linearly with deeply nested blocks each adding its own controller", () => {
     const block = "do { let h = UIHostingController(rootView: Details())\n addChild(h)\n";
     const nested = (n: number) =>
       `final class C: UIViewController {\n func f() {\n${block.repeat(n)}${"}".repeat(n)} }\n}`;

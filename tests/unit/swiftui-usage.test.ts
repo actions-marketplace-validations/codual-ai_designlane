@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { scanRepo } from "../../src/scan/index.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 const view = (name: string, body = "Text(t)") => `struct ${name}: View { var body: some View { ${body} } }`;
@@ -303,7 +304,7 @@ describe("parts, containers and helpers", () => {
 });
 
 describe("hostile input", () => {
-  it.each([
+  speedIt.each([
     ["calls with no newlines", "A()".repeat(150_000)],
     ["unclosed calls", "A(".repeat(150_000)],
     ["cases and calls", "case x: A(".repeat(50_000)],

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { scanRepo } from "../../src/scan/index.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 /** Hostile input spread over files small enough to be read (files over 512 KB are skipped as generated). */
@@ -374,18 +375,17 @@ describe("the palette", () => {
 });
 
 describe("hostile input", () => {
-  it("stays fast with thousands of different pasted colours", async () => {
+  speedIt("stays fast with thousands of different pasted colours", async () => {
     const lines = Array.from(
       { length: 20_000 },
       (_, i) => `x(Color(hex: 0x${(i * 997).toString(16).padStart(6, "0")}))`,
     );
     const started = performance.now();
     await tokens("", inFiles(lines, 300));
-    // About 1 s alone; the whole suite running beside it can triple that. A per-colour rescan would take minutes.
-    expect(performance.now() - started).toBeLessThan(6000);
+    expect(performance.now() - started).toBeLessThan(3000);
   });
 
-  it("stays fast with thousands of identical named colours and near matches", async () => {
+  speedIt("stays fast with thousands of identical named colours and near matches", async () => {
     const named = Array.from({ length: 20_000 }, (_, i) => `let c${i} = Color(hex: "#000000")`);
     const near = Array.from({ length: 20_000 }, (_, i) => `x(Color(hex: "#0${i % 4}0000"))`);
     const started = performance.now();
@@ -393,7 +393,7 @@ describe("hostile input", () => {
     expect(performance.now() - started).toBeLessThan(3000);
   });
 
-  it("stays fast with thousands of colours declared on a type and thousands of uses", async () => {
+  speedIt("stays fast with thousands of colours declared on a type and thousands of uses", async () => {
     const declared = Array.from(
       { length: 5_000 },
       (_, i) => `static let c${i} = Color(hex: "#0000${i % 10}0")`,
@@ -407,22 +407,25 @@ describe("hostile input", () => {
     expect(performance.now() - started).toBeLessThan(3000);
   });
 
-  it("stays fast crediting thousands of qualified uses among thousands of same-named colours", async () => {
-    const owners = Array.from(
-      { length: 3_000 },
-      (_, i) => `enum T${i} { static let c = Color(red: 0.1, green: 0.1, blue: 0.1) }`,
-    );
-    const uses = Array.from({ length: 3_000 }, () => "x(T2999.c)");
-    const started = performance.now();
-    const { colors } = await tokens("", {
-      "App/Theme.swift": `import SwiftUI\n${owners.join("\n")}`,
-      ...inFiles(uses, 3000),
-    });
-    expect(performance.now() - started).toBeLessThan(3000);
-    expect(colors.find((c) => c.reference === "T2999.c")?.uses).toBe(3_000);
-  });
+  speedIt(
+    "stays fast crediting thousands of qualified uses among thousands of same-named colours",
+    async () => {
+      const owners = Array.from(
+        { length: 3_000 },
+        (_, i) => `enum T${i} { static let c = Color(red: 0.1, green: 0.1, blue: 0.1) }`,
+      );
+      const uses = Array.from({ length: 3_000 }, () => "x(T2999.c)");
+      const started = performance.now();
+      const { colors } = await tokens("", {
+        "App/Theme.swift": `import SwiftUI\n${owners.join("\n")}`,
+        ...inFiles(uses, 3000),
+      });
+      expect(performance.now() - started).toBeLessThan(3000);
+      expect(colors.find((c) => c.reference === "T2999.c")?.uses).toBe(3_000);
+    },
+  );
 
-  it("stays fast on long chains of type names and deep blocks full of Self", async () => {
+  speedIt("stays fast on long chains of type names and deep blocks full of Self", async () => {
     const chain = `x(${"Theme.".repeat(50_000)}c)`;
     const deep = `enum Theme {\nstatic let c = Color(red: 1, green: 0, blue: 0)\n${"do {\n x(Self.c)\n".repeat(5_000)}${"}".repeat(5_000)}\n}`;
     const started = performance.now();
@@ -430,18 +433,17 @@ describe("hostile input", () => {
     expect(performance.now() - started).toBeLessThan(3000);
   });
 
-  it("stays fast when lines are padded with long runs of spaces", async () => {
+  speedIt("stays fast when lines are padded with long runs of spaces", async () => {
     const lines = Array.from(
       { length: 2000 },
       () => `let a${" ".repeat(400)}${"x(Color(white: 0.5)) ".repeat(40)}`,
     );
     const started = performance.now();
     await tokens("", inFiles(lines, 300));
-    // About 1 s alone; the whole suite running beside it can triple that. A per-colour rescan would take minutes.
-    expect(performance.now() - started).toBeLessThan(6000);
+    expect(performance.now() - started).toBeLessThan(3000);
   });
 
-  it("stays fast on a line full of assignments with no shift", async () => {
+  speedIt("stays fast on a line full of assignments with no shift", async () => {
     const started = performance.now();
     await tokens("", { "App/Hostile.swift": "a = ".repeat(120_000) });
     expect(performance.now() - started).toBeLessThan(2000);

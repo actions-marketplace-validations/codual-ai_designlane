@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseColorset } from "../../src/frameworks/xcode-colors.js";
 import { scanRepo } from "../../src/scan/index.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 const fixture = path.join(import.meta.dirname, "..", "fixtures", "swiftui-app");
@@ -177,7 +178,7 @@ describe("scanning a SwiftUI app", () => {
     ]);
   });
 
-  it("reads fonts quickly from a hostile file", async () => {
+  speedIt("reads fonts quickly from a hostile file", async () => {
     const root = await tempDir({ "App/F.swift": `import SwiftUI\n${'.custom("x'.repeat(100_000)}` });
     const started = performance.now();
     await scanRepo(root);

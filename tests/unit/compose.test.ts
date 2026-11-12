@@ -6,6 +6,7 @@ import { toDesignTokens } from "../../src/output/tokens-json.js";
 import { scanRepo } from "../../src/scan/index.js";
 import { themesOutsideNote } from "../../src/scan/notes.js";
 import type { ColorToken } from "../../src/scan/types.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 const IMPORTS = "import androidx.compose.runtime.Composable\nimport androidx.compose.ui.graphics.Color\n";
@@ -422,7 +423,7 @@ describe("hostile Compose files", () => {
   const SIZE = 200_000;
   const repeat = (line: string) => line.repeat(Math.floor(SIZE / line.length));
 
-  it.each([
+  speedIt.each([
     ["calls that never close", repeat("Typography(\nlightColorScheme(\nf(Color(\nTextStyle(\npadding(\n")],
     ["thousands of colour constants", repeat("val C = Color(0xFF000000)\n")],
     ["constants in an object, on one line", `object P { ${repeat("val C = Color(0xFF000000); ")} }`],

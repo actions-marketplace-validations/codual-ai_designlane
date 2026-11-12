@@ -3,6 +3,7 @@ import { toDesignMd } from "../../src/output/design-md.js";
 import { namedLinks } from "../../src/output/screen-links.js";
 import { scanRepo } from "../../src/scan/index.js";
 import { scanNotes } from "../../src/scan/notes.js";
+import { speedIt } from "../helpers/speed.js";
 import { tempDir } from "../helpers/temp.js";
 
 const IMPORTS = "import androidx.compose.runtime.Composable\n";
@@ -416,7 +417,7 @@ describe("Compose views", () => {
 });
 
 describe("hostile Compose navigation", () => {
-  it.each([
+  speedIt.each([
     [
       "thousands of destinations and links",
       Array.from(
