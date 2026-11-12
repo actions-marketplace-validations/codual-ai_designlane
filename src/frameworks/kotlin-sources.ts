@@ -1,5 +1,5 @@
 import { isTestPath } from "../scan/test-paths.js";
-import { kotlinCodeOnly } from "./kotlin-source.js";
+import { kotlinCodeOnly, kotlinWithoutComments } from "./kotlin-source.js";
 import type { ScanContext } from "./plugin.js";
 import { type BracketTree, bracketTree } from "./source-text.js";
 
@@ -8,6 +8,8 @@ export interface KotlinSource {
   text: string;
   /** The text with comments, strings and characters blanked out. */
   code: string;
+  /** The text with only comments blanked: what the code says, strings included. */
+  written: string;
   /** Uses Jetpack Compose (or Compose Multiplatform). */
   compose: boolean;
 }
@@ -21,7 +23,13 @@ export async function kotlinSources(ctx: ScanContext): Promise<KotlinSource[]> {
     const text = await ctx.read(f);
     if (!text) continue;
     const code = kotlinCodeOnly(text);
-    out.push({ rel: f.rel, text, code, compose: COMPOSE_IMPORT.test(code) });
+    out.push({
+      rel: f.rel,
+      text,
+      code,
+      written: kotlinWithoutComments(text),
+      compose: COMPOSE_IMPORT.test(code),
+    });
   }
   return out;
 }
@@ -36,4 +44,21 @@ export function treeOf(source: KotlinSource): BracketTree {
     trees.set(source, tree);
   }
   return tree;
+}
+
+/** The module a file belongs to: its path before `/src/`, so an app's phone, TV and watch apps are told apart. */
+export const moduleOf = (source: KotlinSource): string => source.rel.split("/src/")[0] ?? source.rel;
+
+/** Of several things sharing a name, the one nearest `source`: in the same file, then in the same module, then the only
+ * one; when several are elsewhere, none, since a link to another app's copy would be wrong. */
+export function nearestTo<T>(
+  items: T[],
+  source: KotlinSource,
+  sourceOf: (item: T) => KotlinSource,
+): T | undefined {
+  return (
+    items.find((item) => sourceOf(item) === source) ??
+    items.find((item) => moduleOf(sourceOf(item)) === moduleOf(source)) ??
+    (items.length === 1 ? items[0] : undefined)
+  );
 }

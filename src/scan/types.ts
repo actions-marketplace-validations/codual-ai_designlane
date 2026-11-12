@@ -26,6 +26,35 @@ export interface ScreenRef {
   score: number;
 }
 
+/**
+ * How a screen appears when another opens it: `push` onto the navigation stack (with a way back), a `sheet` from the
+ * bottom, a `dialog` over the screen, `fullScreen` over everything, a `popover` from a control, a `tab` switched to,
+ * `replace` (the stack starts again from it, as after signing in), or a `pane` beside the screen that opened it, on
+ * a tablet or an unfolded phone.
+ */
+export const OPENINGS = [
+  "push",
+  "sheet",
+  "dialog",
+  "fullScreen",
+  "popover",
+  "tab",
+  "replace",
+  "pane",
+] as const;
+export type Opening = (typeof OPENINGS)[number];
+
+/** One screen opening another, and where the code does it. */
+export interface ScreenLink {
+  /** `ScreenRef` ids. */
+  from: string;
+  to: string;
+  opening: Opening;
+  /** Where the code opens it. */
+  file: string;
+  line: number;
+}
+
 export interface ColorToken {
   /** The app's name for it, or its hex value when the code never names it. */
   name: string;
@@ -85,8 +114,16 @@ export interface FrameworkScan {
   platforms: Platform[];
   screens: ScreenRef[];
   tokens: DesignTokens;
-  /** False when Designmap doesn't read this framework's screens yet. */
-  screensRead?: false;
+  /** Navigation libraries the app uses that Designmap doesn't read (`Appyx`), so its links aren't listed. */
+  navigationNotRead?: string[];
+  /** Screens opening other screens, by id, in a stable order; present, even empty, only for the frameworks whose
+   * navigation is read. */
+  links?: ScreenLink[];
+  /** The screens the app's navigation starts on, by id. */
+  starts?: string[];
+  /** Navigation the code does that couldn't be tied to two screens (a destination in a library, or drawn without one
+   * of the app's views), so the links may be incomplete. */
+  unresolvedLinks?: number;
   /** Theme objects the code reads its design from that are defined outside the project (`ElementTheme`), so their
    * tokens are in the library's own code. */
   themesOutside?: string[];

@@ -381,7 +381,8 @@ describe("hostile input", () => {
     );
     const started = performance.now();
     await tokens("", inFiles(lines, 300));
-    expect(performance.now() - started).toBeLessThan(3000);
+    // About 1 s alone; the whole suite running beside it can triple that. A per-colour rescan would take minutes.
+    expect(performance.now() - started).toBeLessThan(6000);
   });
 
   it("stays fast with thousands of identical named colours and near matches", async () => {
@@ -436,7 +437,8 @@ describe("hostile input", () => {
     );
     const started = performance.now();
     await tokens("", inFiles(lines, 300));
-    expect(performance.now() - started).toBeLessThan(3000);
+    // About 1 s alone; the whole suite running beside it can triple that. A per-colour rescan would take minutes.
+    expect(performance.now() - started).toBeLessThan(6000);
   });
 
   it("stays fast on a line full of assignments with no shift", async () => {

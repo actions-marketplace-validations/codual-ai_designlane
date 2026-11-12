@@ -6,6 +6,23 @@ import { blankCommentsAndStrings } from "./source-text.js";
 export const kotlinCodeOnly = (text: string): string =>
   blankCommentsAndStrings(text, kotlinCommentOrStringEnd);
 
+/** Kotlin text with only its comments blanked: strings are kept, and a `//` inside one isn't taken for a comment. */
+export function kotlinWithoutComments(text: string): string {
+  const out = text.split("");
+  let i = 0;
+  while (i < text.length) {
+    const end = kotlinCommentOrStringEnd(text, i);
+    if (end === undefined) {
+      i++;
+      continue;
+    }
+    if (text.startsWith("//", i) || text.startsWith("/*", i))
+      for (let k = i; k < end; k++) if (out[k] !== "\n") out[k] = " ";
+    i = end;
+  }
+  return out.join("");
+}
+
 /** Where the Kotlin comment, string or character literal starting at `i` ends, or undefined when none starts there. */
 function kotlinCommentOrStringEnd(text: string, i: number): number | undefined {
   if (text.startsWith("//", i)) {

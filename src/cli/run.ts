@@ -5,8 +5,8 @@ import { twoFrameworks } from "../output/tokens-json.js";
 import { writeOutputs } from "../output/write.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
-import { themesOutsideNote } from "../scan/themes-outside.js";
-import { FRAMEWORK_NAMES, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
+import { scanNotes } from "../scan/notes.js";
+import { type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 
 const HELP = `designmap: map a mobile app's design system from its code
 
@@ -74,8 +74,7 @@ async function map(
   const scan = await scanRepo(root);
   const gaps = readGaps(scan);
   if (gaps) error(`designmap: ${gaps}`);
-  const outside = themesOutsideNote(scan);
-  if (outside) error(`designmap: ${outside}`);
+  for (const note of scanNotes(scan)) error(`designmap: ${note}`);
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
   if (scan.frameworks.length === 0)
     throw new UsageError(`no ${SUPPORTED_FRAMEWORKS} code found in ${scan.root}`, 1);
@@ -123,14 +122,11 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** What was found, in a few lines. */
 function summary(scan: ScanResult): string {
   return scan.frameworks
-    .map(({ framework, screens, screensRead, tokens }) => {
+    .map(({ screens, tokens }) => {
       const pages = screens.filter((s) => s.kind === "screen").length;
       const colours = tokens.colors.length;
       const styles = tokens.typeStyles.length;
-      const views =
-        screensRead === false
-          ? `${FRAMEWORK_NAMES[framework]} (screens aren't read yet)`
-          : `${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`;
+      const views = `${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`;
       const lines = [
         `${path.basename(scan.root)}: ${views}`,
         `  ${plural(colours, "colour")}, ${plural(styles, "text style")}`,

@@ -7,6 +7,7 @@
 import path from "node:path";
 import { weightLabel } from "../scan/type-scale.js";
 import { FRAMEWORK_NAMES, type FrameworkScan, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
+import { linkNotes, namedLinks, OPENING_WORDS } from "./screen-links.js";
 import { dimensionKey, keyedColors, keyedStyles } from "./token-names.js";
 
 /** How many colours and text styles are described one per line; the rest follow briefly. */
@@ -194,19 +195,32 @@ export function toDesignMd(scan: ScanResult): string {
   return `${sections.join("\n\n")}\n`;
 }
 
+/** How many links between screens the overview lists; the rest are counted. */
+const MAX_LINKS_NAMED = 30;
+
+function linksLine(frameworks: FrameworkScan[]): string {
+  const all = namedLinks(frameworks).map(
+    (l) => `${l.fromName} → ${l.toName}${l.opening === "push" ? "" : ` (${OPENING_WORDS[l.opening]})`}`,
+  );
+  const shown = all.slice(0, MAX_LINKS_NAMED);
+  const more = all.length > shown.length ? `, and ${all.length - shown.length} more` : "";
+  const listed = all.length ? `How screens open each other: ${shown.join("; ")}${more}.` : "";
+  return [listed, ...(all.length ? linkNotes(frameworks).filter((n) => !n.startsWith("Links between")) : [])]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function overview({ frameworks }: ScanResult, name: string): string {
   if (!frameworks.length) return `Designmap found no ${SUPPORTED_FRAMEWORKS} code in ${name}.`;
   const views = frameworks.flatMap((f) => f.screens);
   const screens = views.filter((v) => v.kind === "screen").map((v) => v.name);
   const components = views.filter((v) => v.kind === "component").map((v) => v.name);
   const built = frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
-  const counted = frameworks.every((f) => f.screensRead === false)
-    ? ""
-    : `: ${plural(screens.length, "screen")} and ${plural(components.length, "component")}`;
   return [
-    `${name} is built with ${built}${counted}. Everything here was read from its code. Colours and text styles are listed most used first, with their use counts. Sizes are in points (dp on Android), written as px.`,
+    `${name} is built with ${built}: ${plural(screens.length, "screen")} and ${plural(components.length, "component")}. Everything here was read from its code. Colours and text styles are listed most used first, with their use counts. Sizes are in points (dp on Android), written as px.`,
     screens.length ? `Screens: ${named(screens)}.` : "",
     components.length ? `Components: ${named(components)}.` : "",
+    linksLine(frameworks),
   ]
     .filter(Boolean)
     .join("\n\n");

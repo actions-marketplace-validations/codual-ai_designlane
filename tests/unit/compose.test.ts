@@ -4,7 +4,7 @@ import { familyFromFile } from "../../src/frameworks/compose-fonts.js";
 import { kotlinCodeOnly } from "../../src/frameworks/kotlin-source.js";
 import { toDesignTokens } from "../../src/output/tokens-json.js";
 import { scanRepo } from "../../src/scan/index.js";
-import { themesOutsideNote } from "../../src/scan/themes-outside.js";
+import { themesOutsideNote } from "../../src/scan/notes.js";
 import type { ColorToken } from "../../src/scan/types.js";
 import { tempDir } from "../helpers/temp.js";
 
@@ -156,6 +156,25 @@ describe("Compose colours", () => {
     });
     expect(colorOf(tokens.colors, "Palette.Dark.Bg")).toMatchObject({ light: "#000001", uses: 1 });
     expect(colorOf(tokens.colors, "Brand.Accent")).toMatchObject({ light: "#000002", uses: 1 });
+  });
+
+  it("reads colours whose arguments have comments beside them", async () => {
+    const { tokens } = await compose({
+      "app/Color.kt": [
+        "val A = Color(0xFF112233 /* brand */)",
+        "val B = Color(",
+        "  0xFF445566, // muted",
+        ")",
+        "val C = Color(",
+        "  // red",
+        "  0xFF778899)",
+      ].join("\n"),
+    });
+    expect(["A", "B", "C"].map((name) => colorOf(tokens.colors, name)?.light)).toEqual([
+      "#112233",
+      "#445566",
+      "#778899",
+    ]);
   });
 
   it("reads a copy of any colour with its new alpha, but not a copy changing a channel", async () => {

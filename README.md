@@ -16,9 +16,11 @@ https://github.com/user-attachments/assets/29a82c2f-6df5-4788-a596-fab2a4b10efb
 
 Designmap reads SwiftUI and Jetpack Compose apps today. For Compose it reads the design tokens: the Material colour
 scheme (each role with its Light and Dark value), the type scale and named text styles, an app's own colour class,
-colour resources, and the spacing and corner radii written in `dp`. It doesn't read Compose screens yet, or spacing
-the code names (`Dimens.medium`). A repo with both an iOS and an Android app is synced one app at a time: run
-Designmap on each app's folder.
+colour resources, and the spacing and corner radii written in `dp`. It also finds a Compose app's screens and how
+they open each other (pushed, a sheet, a dialog, a pane beside, or starting over), for Navigation Compose, Navigation
+3 and Circuit, and the screen the app starts on. It doesn't read tab switches or spacing the code names
+(`Dimens.medium`) yet. A repo with both an iOS and an Android app is synced one app at a time: run Designmap on each
+app's folder.
 
 ### A design system in its own repo
 

@@ -4,9 +4,10 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toDesignMd } from "../output/design-md.js";
+import { linkNotes, type NamedLink, namedLinks, OPENING_WORDS } from "../output/screen-links.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
-import { themesOutsideNote } from "../scan/themes-outside.js";
+import { scanNotes } from "../scan/notes.js";
 import { type ScanResult, type ScreenRef, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 
 const INSTRUCTIONS = `Designmap reads this app's design system from its code.
@@ -14,10 +15,11 @@ When you build or change UI in this app:
 1. Call get_design_system first. Prefer the app's most used colours, text styles, spacing and corner radii over new values.
 2. Write values the way the app's code does. A token name is only a label: before using a name in code, search the code for it. If it isn't there (like hex-33a854 or system-15-semibold), write the value itself, in the app's own style.
 3. Call find_views before creating a view, and reuse an existing component when one fits.
+4. Call get_screen_links before adding or changing navigation, to open screens the way the app already does.
 If a tool says only part of the app was read, its lists are incomplete.`;
 
-/** How many views find_views lists; a narrower query shows the rest. */
-const MAX_VIEWS_LISTED = 40;
+/** How many views or links a tool lists; a narrower query shows the rest. */
+const MAX_LISTED = 40;
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -30,7 +32,7 @@ async function withApp(root: string, answer: (scan: ScanResult) => string): Prom
   try {
     if (!(await isFolder(root))) return failure(`Not a folder: ${root}. Pass the app's folder as repo.`);
     const scan = await scanRepo(root);
-    const gaps = [readGaps(scan), themesOutsideNote(scan)].filter(Boolean).join(" ");
+    const gaps = [readGaps(scan), ...scanNotes(scan)].filter(Boolean).join(" ");
     if (!scan.frameworks.length)
       return failure([`No ${SUPPORTED_FRAMEWORKS} code found in ${root}.`, gaps].filter(Boolean).join(" "));
     return text(`${gaps ? `${gaps}\n\n` : ""}${answer(scan)}`);
@@ -47,7 +49,7 @@ function views(scan: ScanResult, query?: string, kind?: ScreenRef["kind"]): stri
     .flatMap((f) => f.screens)
     .filter((v) => (!kind || v.kind === kind) && (!q || v.name.toLowerCase().includes(q)));
   if (!found.length) return "No matching views.";
-  const shown = found.slice(0, MAX_VIEWS_LISTED);
+  const shown = found.slice(0, MAX_LISTED);
   const more = found.length > shown.length ? ` (showing ${shown.length}; narrow with query or kind)` : "";
   return `${found.length} view${found.length === 1 ? "" : "s"}${more}:\n${shown.map(listed).join("\n")}`;
 }
@@ -90,5 +92,32 @@ export function createServer(defaultRoot: string, version: string): McpServer {
     ({ repo: r, query, kind }) => withApp(rootOf(r), (scan) => views(scan, query, kind)),
   );
 
+  server.registerTool(
+    "get_screen_links",
+    {
+      title: "Get screen links",
+      description:
+        "Call to see how the app moves between screens before adding or changing navigation. Returns which screen opens which, how (pushed, a dialog or a sheet) and the file and line where the code does it, for screens whose names contain the query.",
+      inputSchema: { repo, query: z.string().optional().describe("Part of a screen's name, e.g. Settings") },
+      annotations,
+    },
+    ({ repo: r, query }) => withApp(rootOf(r), (scan) => screenLinks(scan, query)),
+  );
+
   return server;
+}
+
+function screenLinks(scan: ScanResult, query?: string): string {
+  const notes = linkNotes(scan.frameworks).join(" ");
+  const q = query?.toLowerCase();
+  const found = namedLinks(scan.frameworks).filter(
+    (l) => !q || l.fromName.toLowerCase().includes(q) || l.toName.toLowerCase().includes(q),
+  );
+  if (!found.length) return ["No links between screens found.", notes].filter(Boolean).join(" ");
+  const shown = found.slice(0, MAX_LISTED);
+  const more = found.length > shown.length ? ` (showing ${shown.length}; narrow with query)` : "";
+  const line = (l: NamedLink) =>
+    `- ${l.fromName} → ${l.toName} (${OPENING_WORDS[l.opening]}) ${l.file}:${l.line}`;
+  const listed = `${found.length} link${found.length === 1 ? "" : "s"}${more}:\n${shown.map(line).join("\n")}`;
+  return notes ? `${listed}\n\n${notes}` : listed;
 }

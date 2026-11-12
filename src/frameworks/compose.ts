@@ -1,16 +1,26 @@
 import { themesOutside } from "./compose-external-theme.js";
 import { composeTokens } from "./compose-tokens.js";
+import { composeViews, navigationNotRead } from "./compose-views.js";
 import { kotlinSources } from "./kotlin-sources.js";
 import type { FrameworkPlugin } from "./plugin.js";
 
-/** Jetpack Compose (and Compose Multiplatform): its design tokens. Its screens come in a later piece. */
+/** Jetpack Compose (and Compose Multiplatform): its views, the links between its screens, and its design tokens. */
 export const compose: FrameworkPlugin = {
   id: "compose",
   platforms: ["android"],
-  screensRead: false,
   async scan(ctx) {
     const sources = await kotlinSources(ctx);
     if (!sources.some((s) => s.compose)) return undefined;
-    return { views: [], tokens: await composeTokens(ctx, sources), themesOutside: themesOutside(sources) };
+    const { views, links, starts, unresolvedLinks } = composeViews(sources);
+    const unread = navigationNotRead(sources);
+    return {
+      views,
+      links,
+      starts,
+      unresolvedLinks,
+      tokens: await composeTokens(ctx, sources),
+      themesOutside: themesOutside(sources),
+      ...(unread.length > 0 && { navigationNotRead: unread }),
+    };
   },
 };

@@ -37,7 +37,7 @@ export function fontFamilies(sources: KotlinSource[]): Map<string, string> {
       const file = body.match(/\b(?:R|Res)\.font\.(\w+)/)?.[1];
       // A Google font names its family in a string, which only the original text keeps, here or in a constant.
       const google =
-        source.text.slice(at, close).match(/GoogleFont\s*\(\s*"([^"]+)"/)?.[1] ??
+        source.written.slice(at, close).match(/GoogleFont\s*\(\s*"([^"]+)"/)?.[1] ??
         googleFonts.get(body.match(/\bgoogleFont\s*=\s*(\w+)/)?.[1] ?? "");
       const family = google ?? (file ? familyFromFile(file) : undefined);
       if (family) families.set(name, family);

@@ -42,6 +42,7 @@ describe("MCP server", () => {
     expect(tools.map((t) => [t.name, t.annotations?.readOnlyHint])).toEqual([
       ["get_design_system", true],
       ["find_views", true],
+      ["get_screen_links", true],
     ]);
   });
 
@@ -102,6 +103,26 @@ describe("MCP server", () => {
     expect(empty.text).toMatch(/^No SwiftUI or Jetpack Compose code found in /);
     const other = await call(client, "find_views", { repo: await tempDir(APP), kind: "screen" });
     expect(other.text).toContain("Home");
+  });
+
+  it("lists links between screens, filtered by name, and says when an app's links aren't read", async () => {
+    const compose = await tempDir({
+      "app/Views.kt":
+        "import androidx.compose.runtime.Composable\n@Composable fun Inbox(onOpen: () -> Unit) { }\n@Composable fun Thread() { }",
+      "app/Nav.kt":
+        "import androidx.compose.runtime.Composable\n@Composable fun Nav() { NavHost(nav, InboxRoute) { composable<InboxRoute> { Inbox(onOpen = { nav.navigate(ThreadRoute) }) }; dialog<ThreadRoute> { Thread() } } }",
+    });
+    const client = await connect(compose);
+    expect((await call(client, "get_screen_links")).text).toBe(
+      "1 link:\n- Inbox → Thread (dialog) app/Nav.kt:2\n\nThe app starts on Inbox.",
+    );
+    expect((await call(client, "get_screen_links", { query: "settings" })).text).toBe(
+      "No links between screens found. The app starts on Inbox.",
+    );
+    const swift = await call(await connect(await tempDir(APP)), "get_screen_links");
+    expect(swift.text).toBe(
+      "No links between screens found. Links between screens aren't read for SwiftUI yet.",
+    );
   });
 
   it("turns an unexpected failure into a message the agent can act on", async () => {

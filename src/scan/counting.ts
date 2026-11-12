@@ -12,3 +12,15 @@ export function mostCommon<T>(
 
 export const byText = (a: string, b: string) => a.localeCompare(b);
 export const byNumber = (a: number, b: number) => a - b;
+
+/** `items` grouped by `keyOf`, each group in the items' order. */
+export function groupBy<T, K>(items: Iterable<T>, keyOf: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
+}

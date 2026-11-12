@@ -1,6 +1,6 @@
 import type { ViewFacts } from "../scan/classify.js";
 import type { SourceFile } from "../scan/files.js";
-import type { DesignTokens, FrameworkId, Platform } from "../scan/types.js";
+import type { DesignTokens, FrameworkId, Opening, Platform } from "../scan/types.js";
 
 export interface ScanContext {
   root: string;
@@ -13,10 +13,34 @@ export interface ScanContext {
   read(file: SourceFile): Promise<string | undefined>;
 }
 
+/** A view, by where it's declared. */
+export interface ViewRef {
+  name: string;
+  file: string;
+  line: number;
+}
+
+/** One view's screen opening another's, how it appears, and where the code does it. */
+export interface ViewLink {
+  from: ViewRef;
+  to: ViewRef;
+  opening: Opening;
+  file: string;
+  line: number;
+}
+
 /** What a plugin found in one framework's code. */
 export interface FrameworkFindings {
   views: ViewFacts[];
   tokens: DesignTokens;
+  /** Navigation libraries the app uses that aren't read, so its links aren't listed. */
+  navigationNotRead?: string[];
+  /** Screens opening other screens, present (empty when there are none) when the framework's navigation is read. */
+  links?: ViewLink[];
+  /** The views the app's navigation starts on. */
+  starts?: ViewRef[];
+  /** Navigation that couldn't be tied to two views. */
+  unresolvedLinks?: number;
   /** Theme objects the code reads its design from that are defined outside the project, in a library. */
   themesOutside?: string[];
 }
@@ -29,7 +53,5 @@ export interface FrameworkFindings {
 export interface FrameworkPlugin {
   id: FrameworkId;
   platforms: Platform[];
-  /** False while the plugin reads only design tokens, so no screens means none were looked for. */
-  screensRead?: false;
   scan(ctx: ScanContext): Promise<FrameworkFindings | undefined>;
 }

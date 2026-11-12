@@ -7,7 +7,7 @@ import { lineNumbers } from "./source-text.js";
 export interface Argument {
   /** The argument's name, for `name = value`. */
   name?: string;
-  /** The value, trimmed, from the blanked code. */
+  /** The value from the blanked code, from its first character to its last as written (a string counts). */
   value: string;
   /** Where the value starts in the file. */
   at: number;
@@ -27,13 +27,15 @@ export function callArguments(source: KotlinSource, open: number): { args: Argum
   const args: Argument[] = [];
   let depth = 0;
   let start = open + 1;
+  // Edges are found in the code as written, comments left out: a string is blank in `code` but still part of it.
   const push = (end: number) => {
     const named = code.slice(start, end).match(/^\s*(\w+)\s*=(?!=)/);
     const valueStart = start + (named ? named[0].length : 0);
-    const value = code.slice(valueStart, end);
-    const lead = value.length - value.trimStart().length;
-    if (value.trim())
-      args.push({ ...(named?.[1] && { name: named[1] }), value: value.trim(), at: valueStart + lead });
+    const written = source.written.slice(valueStart, end);
+    const trimmed = written.trim();
+    if (!trimmed) return;
+    const at = valueStart + written.length - written.trimStart().length;
+    args.push({ ...(named?.[1] && { name: named[1] }), value: code.slice(at, at + trimmed.length), at });
   };
   for (let j = open + 1; j < close; j++) {
     const c = code[j];
@@ -62,6 +64,9 @@ export function assignedName(code: string, at: number): string | undefined {
     /\b(?:val|var|fun)\s+(\w+)(?:\s*\(\s*\))?(?:\s*:\s*[\w.<>?, ]+?)?(?:\s*(?:@\w+\s*)*get\s*\(\s*\))?\s*=\s*$/,
   )?.[1];
 }
+
+/** A function declaration, `fun NavController.navigateToTopic(`, with its name. */
+export const FUNCTION_DECLARATION = /\bfun\s+(?:<[^>]*>\s*)?(?:[\w.<>?]+\.)?(\w+)\s*\(/g;
 
 /** Whether the name at `at` is being declared (`class Color(`, `fun TextStyle(`) rather than called. */
 export const isDeclared = (code: string, at: number) =>
