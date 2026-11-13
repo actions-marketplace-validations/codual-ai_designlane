@@ -16,6 +16,7 @@ export const TOKENS_FILE = "tokens.json";
 export const APP_TOKENS_FILES: Record<FrameworkId, string> = {
   swiftui: "tokens.ios.json",
   compose: "tokens.android.json",
+  "react-native": "tokens.react-native.json",
 };
 
 /**

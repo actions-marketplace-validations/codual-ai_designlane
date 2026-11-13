@@ -1,4 +1,4 @@
-import type { ScanResult } from "./types.js";
+import { FRAMEWORK_NAMES, type ScanResult } from "./types.js";
 
 /** What to do about a theme the app reads from a library outside the project, in a sentence, or undefined. */
 export function themesOutsideNote(scan: Pick<ScanResult, "frameworks">): string | undefined {
@@ -22,6 +22,29 @@ function navigationNotReadNote(scan: Pick<ScanResult, "frameworks">): string | u
   );
 }
 
+/** Which of the app's themes are synced when it has more than a light and a dark one, in a sentence, or undefined. */
+function otherThemesNote(scan: Pick<ScanResult, "frameworks">): string | undefined {
+  const themes = [...new Set(scan.frameworks.flatMap((f) => f.otherThemes ?? []))];
+  if (!themes.length) return undefined;
+  return (
+    `This app has more themes than a light and a dark one (${themes.map((t) => `\`${t}\``).join(", ")}): ` +
+    "Designmap reads its light and dark ones, or its first, since Figma's modes hold those."
+  );
+}
+
+/** What a React Native app's native code means for the result, in a sentence, or undefined. */
+function nativeAlongsideNote(scan: Pick<ScanResult, "nativeAlongside">): string | undefined {
+  const native = scan.nativeAlongside ?? [];
+  if (!native.length) return undefined;
+  const names = native.map((f) => FRAMEWORK_NAMES[f]).join(" and ");
+  return `This React Native app also has ${names} code, its native side (widgets, extensions): only the React Native app is read.`;
+}
+
 /** Everything a reader of the scan should know about what it couldn't see, as sentences. */
-export const scanNotes = (scan: Pick<ScanResult, "frameworks">) =>
-  [themesOutsideNote(scan), navigationNotReadNote(scan)].filter((note) => note !== undefined);
+export const scanNotes = (scan: Pick<ScanResult, "frameworks" | "nativeAlongside">) =>
+  [
+    themesOutsideNote(scan),
+    navigationNotReadNote(scan),
+    otherThemesNote(scan),
+    nativeAlongsideNote(scan),
+  ].filter((note) => note !== undefined);

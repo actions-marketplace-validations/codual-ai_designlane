@@ -23,6 +23,12 @@ tab, a pane beside, or starting over) and the screen the app starts on: in Swift
 presentation modifiers, tabs, split views and an app's own router; in Compose through Navigation Compose, Navigation 3
 and Circuit. It doesn't yet read Compose tab switches, or spacing the code names (`Dimens.medium`).
 
+React Native support has started with colours: those an app's theme objects name (a `light` and a `dark` theme paired
+into one colour, a theme's colours reached through another's), Tailwind's (a `tailwind.config.js`, or a CSS
+`@theme`, as NativeWind and Uniwind use), and colours written straight into styles. Its text styles, spacing and
+screens come next. A React Native app's SwiftUI or Compose code (a widget, an extension) is left out, as its native
+side.
+
 A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a
 different blue, the platform's own fonts): `designmap/tokens.ios.json` and `designmap/tokens.android.json`, with one
 DESIGN.md covering both. Connect each Figma file to its app's path.

@@ -42,8 +42,8 @@ export interface ApplyOptions {
   platform?: Platform;
 }
 
-/** Figma's code syntax slot for each platform. */
-const CODE_SYNTAX = { ios: "iOS", android: "ANDROID" } as const;
+/** Figma's code syntax slot for each platform: React Native's JavaScript goes in the web slot. */
+const CODE_SYNTAX = { ios: "iOS", android: "ANDROID", "react-native": "WEB" } as const;
 
 /** What an apply did that the designer should know: what it left out, and whether it added a Dark mode whose
  * dark values a further sync fills in. */

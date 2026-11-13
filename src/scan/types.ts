@@ -1,17 +1,20 @@
-export type FrameworkId = "swiftui" | "compose";
+export type FrameworkId = "swiftui" | "compose" | "react-native";
 
-/** The platforms an app's code can be for, as tokens.json records them. */
-export const PLATFORMS = ["ios", "android"] as const;
+/** The platforms an app's code can be for, as tokens.json records them; a React Native app's code is for both iOS
+ * and Android, written in JavaScript. */
+export const PLATFORMS = ["ios", "android", "react-native"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 /** Each framework as people write it. */
 export const FRAMEWORK_NAMES: Record<FrameworkId, string> = {
   swiftui: "SwiftUI",
   compose: "Jetpack Compose",
+  "react-native": "React Native",
 };
 
-/** `SwiftUI or Jetpack Compose`, for saying what an app without any of them is missing. */
-export const SUPPORTED_FRAMEWORKS = Object.values(FRAMEWORK_NAMES).join(" or ");
+/** `SwiftUI, Jetpack Compose or React Native`, for saying what an app without any of them is missing. */
+const names = Object.values(FRAMEWORK_NAMES);
+export const SUPPORTED_FRAMEWORKS = `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
 
 export interface ScreenRef {
   /** `<framework>:<path>#<name>`, with `@<line>` added when a file declares the same name twice. */
@@ -129,6 +132,8 @@ export interface FrameworkScan {
   /** Theme objects the code reads its design from that are defined outside the project (`ElementTheme`), so their
    * tokens are in the library's own code. */
   themesOutside?: string[];
+  /** Themes beyond one light and one dark (`black`, a list of presets), which Figma's two modes can't hold. */
+  otherThemes?: string[];
 }
 
 export interface ScanResult {
@@ -139,4 +144,7 @@ export interface ScanResult {
   truncated: boolean;
   /** Folders that couldn't be read. */
   unreadable: string[];
+  /** Native frameworks a React Native app has code in, in its own `ios/` and `android/` folders (its widgets,
+   * extensions), not read as apps of their own. */
+  nativeAlongside?: FrameworkId[];
 }

@@ -100,7 +100,7 @@ describe("MCP server", () => {
     const client = await connect(await tempDir({ "README.md": "hi" }));
     const empty = await call(client, "get_design_system");
     expect(empty.isError).toBe(true);
-    expect(empty.text).toMatch(/^No SwiftUI or Jetpack Compose code found in /);
+    expect(empty.text).toMatch(/^No SwiftUI, Jetpack Compose or React Native code found in /);
     const other = await call(client, "find_views", { repo: await tempDir(APP), kind: "screen" });
     expect(other.text).toContain("Home");
   });

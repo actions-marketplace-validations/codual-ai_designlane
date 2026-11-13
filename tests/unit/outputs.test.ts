@@ -313,7 +313,7 @@ describe("DESIGN.md", () => {
 
   it("says plainly when the app has no code it reads", async () => {
     const md = toDesignMd(await scanRepo(await tempDir({ "README.md": "hi" })));
-    expect(md).toContain("Designmap found no SwiftUI or Jetpack Compose code in");
+    expect(md).toContain("Designmap found no SwiftUI, Jetpack Compose or React Native code in");
     expect(md).toContain('  - section: "colors"');
   });
 });

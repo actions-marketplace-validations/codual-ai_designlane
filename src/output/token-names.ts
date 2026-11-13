@@ -115,8 +115,8 @@ function typeStyleKey(style: TypeStyle): string {
   return tokenKey(words.join("-"));
 }
 
-/** The font each platform draws its system text in. */
-const SYSTEM_FONT: Record<Platform, string> = { ios: "SF Pro", android: "Roboto" };
+/** The font each platform draws its system text in; React Native's is each phone's own, shown as iOS's. */
+const SYSTEM_FONT: Record<Platform, string> = { ios: "SF Pro", android: "Roboto", "react-native": "SF Pro" };
 
 export function keyedStyles(styles: TypeStyle[], platform: Platform = "ios"): KeyedStyle[] {
   const reference = (s: TypeStyle) => s.reference ?? s.name;

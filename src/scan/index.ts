@@ -1,14 +1,15 @@
 import path from "node:path";
 import { compose } from "../frameworks/compose.js";
 import type { FrameworkPlugin, ScanContext } from "../frameworks/plugin.js";
+import { reactNative, reactNativeRoots } from "../frameworks/react-native.js";
 import { swiftui } from "../frameworks/swiftui.js";
 import { viewKey } from "../frameworks/view-links.js";
 import { classify } from "./classify.js";
 import { listFiles, readText, type SourceFile } from "./files.js";
 import { screenLinks } from "./screen-links.js";
-import type { ScanResult, ScreenRef } from "./types.js";
+import type { FrameworkId, ScanResult, ScreenRef } from "./types.js";
 
-const frameworks: readonly FrameworkPlugin[] = [swiftui, compose];
+const frameworks: readonly FrameworkPlugin[] = [swiftui, compose, reactNative];
 
 async function createContext(root: string): Promise<ScanContext> {
   const abs = path.resolve(root);
@@ -26,6 +27,16 @@ function uniqueIds(screens: ScreenRef[]): ScreenRef[] {
 const bestFirst = (a: ScreenRef, b: ScreenRef) =>
   b.score - a.score || a.name.localeCompare(b.name, "en", { numeric: true });
 
+/** The folders a React Native app keeps its native side in (a widget, an extension), which aren't apps of their own. */
+const nativeFolders = (roots: string[]) =>
+  roots.flatMap((root) => ["ios", "android"].map((folder) => (root ? `${root}/${folder}/` : `${folder}/`)));
+
+/** `ctx` with only the files `keep` says, for reading a React Native app's native side apart from the rest. */
+const withFiles = (ctx: ScanContext, keep: (rel: string) => boolean): ScanContext => ({
+  ...ctx,
+  files: ctx.files.filter((f) => keep(f.rel)),
+});
+
 /** Finds every supported framework in the project, its screens (best first) and its design tokens. */
 export async function scanRepo(root: string): Promise<ScanResult> {
   const ctx = await createContext(root);
@@ -36,8 +47,17 @@ export async function scanRepo(root: string): Promise<ScanResult> {
     truncated: ctx.truncated,
     unreadable: ctx.unreadable,
   };
+  // A React Native app's own native folders are left out of the native scans, once the app is found.
+  const roots = await reactNativeRoots(ctx);
+  const app = roots.length > 0 ? await reactNative.scan(ctx) : undefined;
+  const native = app ? nativeFolders(roots) : [];
+  const inNative = (rel: string) => native.some((folder) => rel.startsWith(folder));
+  const nativeAlongside: FrameworkId[] = [];
   for (const plugin of frameworks) {
-    const found = await plugin.scan(ctx);
+    const own = plugin.id !== "react-native" && native.length > 0;
+    const found =
+      plugin === reactNative ? app : await plugin.scan(own ? withFiles(ctx, (rel) => !inNative(rel)) : ctx);
+    if (own && (await plugin.scan(withFiles(ctx, inNative)))) nativeAlongside.push(plugin.id);
     if (!found) continue;
     const screens = uniqueIds(classify(plugin.id, found.views));
     const idOf = new Map(screens.map((s) => [viewKey(s), s.id]));
@@ -54,7 +74,8 @@ export async function scanRepo(root: string): Promise<ScanResult> {
       ...(unresolvedLinks > 0 && { unresolvedLinks }),
       ...(found.navigationNotRead?.length && { navigationNotRead: found.navigationNotRead }),
       ...(found.themesOutside?.length ? { themesOutside: found.themesOutside } : {}),
+      ...(found.otherThemes?.length ? { otherThemes: found.otherThemes } : {}),
     });
   }
-  return result;
+  return nativeAlongside.length > 0 ? { ...result, nativeAlongside } : result;
 }
