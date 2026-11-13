@@ -181,6 +181,19 @@ describe("the plugin window", () => {
     });
   });
 
+  it("fills the form with the repo the file syncs from, so a teammate types only a token", async () => {
+    const ui = await openWindow();
+    const saved = { repo: "octo/app", branch: "release", path: "designmap/tokens.android.json" };
+    ui.receive({ type: "connection", repo: null, saved });
+    const value = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+    expect([value("repo"), value("branch"), value("path"), value("token")]).toEqual([
+      "octo/app",
+      "release",
+      "designmap/tokens.android.json",
+      "",
+    ]);
+  });
+
   it("shows the connected repo, and checks it again or disconnects", async () => {
     const ui = await openWindow();
     ui.receive({

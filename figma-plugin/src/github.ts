@@ -41,7 +41,7 @@ function refusalMessage(response: FetchResponse, { repo, branch, path }: RepoSou
     return `The token can't read ${repo}. Give it read access to this repo's contents.`;
   }
   if (response.status === 404) {
-    return `Couldn't find ${path} on ${branch} in ${repo}. Check the names and that the token can read the repo; if CI hasn't written the file yet, it will on the next push.`;
+    return `Couldn't find ${path} on ${branch} in ${repo}. Check the names and that the token can read the repo. A repo with both an iPhone and an Android app has designmap/tokens.ios.json and designmap/tokens.android.json instead. If CI hasn't written the file yet, it will on the next push.`;
   }
   return `GitHub answered ${response.status} ${response.statusText}. Try again in a moment.`;
 }

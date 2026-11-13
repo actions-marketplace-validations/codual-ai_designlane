@@ -21,8 +21,11 @@ colour resources, and the spacing and corner radii written in `dp`.
 For both, it finds the app's screens and how they open each other (pushed, a sheet, a dialog, full screen, a popover, a
 tab, a pane beside, or starting over) and the screen the app starts on: in SwiftUI through navigation links,
 presentation modifiers, tabs, split views and an app's own router; in Compose through Navigation Compose, Navigation 3
-and Circuit. It doesn't yet read Compose tab switches, or spacing the code names (`Dimens.medium`). A repo with both an
-iOS and an Android app is synced one app at a time: run Designmap on each app's folder.
+and Circuit. It doesn't yet read Compose tab switches, or spacing the code names (`Dimens.medium`).
+
+A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a
+different blue, the platform's own fonts): `designmap/tokens.ios.json` and `designmap/tokens.android.json`, with one
+DESIGN.md covering both. Connect each Figma file to its app's path.
 
 ### A design system in its own repo
 

@@ -46,7 +46,8 @@ const ToPlugin = z.discriminatedUnion("type", [
 export type ToPlugin = z.infer<typeof ToPlugin>;
 
 const ToWindow = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("connection"), repo: RepoSource.nullable() }),
+  /** `saved`: the repo this file syncs from when this computer has no token for it, to fill in the form. */
+  z.object({ type: z.literal("connection"), repo: RepoSource.nullable(), saved: RepoSource.optional() }),
   z.object({ type: z.literal("plan"), id, summary: PlanSummary }),
   z.object({ type: z.literal("applied"), notes: names }),
   z.object({ type: z.literal("error"), message: z.string() }),

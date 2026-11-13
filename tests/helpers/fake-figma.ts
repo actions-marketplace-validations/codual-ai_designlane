@@ -50,6 +50,13 @@ export class FakeNode {
   setSharedPluginData(namespace: string, key: string, value: string) {
     this.data.set(`${namespace}/${key}`, value);
   }
+  /** The plugin's own data, which other plugins can't read: kept apart from every namespace's. */
+  getPluginData(key: string) {
+    return this.data.get(`\0own/${key}`) ?? "";
+  }
+  setPluginData(key: string, value: string) {
+    this.data.set(`\0own/${key}`, value);
+  }
   appendChild(child: FakeNode) {
     this.insertChild(this.children.length, child);
   }

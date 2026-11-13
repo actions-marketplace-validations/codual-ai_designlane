@@ -7,6 +7,7 @@ import { type ApplyOptions, applyPlan } from "./apply.js";
 import {
   type Connection,
   checkConnection,
+  fileSource,
   forgetConnection,
   saveConnection,
   savedConnection,
@@ -102,11 +103,17 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
     }
   }
 
-  /** Says which repo is connected, and plans from it if one is. */
+  /** Says which repo is connected, and plans from it if one is; or, when this computer has no token for the repo the
+   * file syncs from (a teammate's computer), which repo that is, so only the token is asked for. */
   async function ready(id: number): Promise<void> {
     const connection = await savedConnection();
-    send({ type: "connection", repo: connection ? repoOf(connection) : null });
-    if (connection) await planFromRepo(id, connection);
+    if (connection) {
+      send({ type: "connection", repo: repoOf(connection) });
+      await planFromRepo(id, connection);
+      return;
+    }
+    const saved = fileSource();
+    send({ type: "connection", repo: null, ...(saved ? { saved } : {}) });
   }
 
   /** Saves a connection once it has read tokens.json, so a mistyped one is never kept. */

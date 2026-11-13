@@ -1,7 +1,7 @@
 export { toDesignMd } from "./output/design-md.js";
 export { toDesignTokens } from "./output/tokens-json.js";
 export type { DesignTokensFile } from "./output/tokens-schema.js";
-export { OUTPUT_DIR, writeOutputs } from "./output/write.js";
+export { APP_TOKENS_FILES, OUTPUT_DIR, TOKENS_FILE, writeOutputs } from "./output/write.js";
 export { scanRepo } from "./scan/index.js";
 export type * from "./scan/types.js";
 export {

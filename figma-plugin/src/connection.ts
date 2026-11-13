@@ -1,9 +1,16 @@
-/** Where the plugin reads tokens.json from: a GitHub repo, and the token that reads it, kept on this computer only. */
+/** Where the plugin reads tokens.json from: a GitHub repo, kept with the Figma file (an iPhone app's file and an
+ * Android app's file each read their own path), and the token that reads it, kept on this computer only. */
 
 import { z } from "zod";
+import { syncedCollection } from "./design-file.js";
 import { RepoSource } from "./messages.js";
 
-const STORAGE_KEY = "connection";
+/** On the file, readable by this plugin only: the repo, branch and path it syncs from. */
+const SOURCE_KEY = "connection";
+/** On this computer: the token for a repo. */
+const tokenKey = (repo: string) => `token:${repo}`;
+/** On this computer, before connections were kept per file: one repo, branch, path and token. */
+const LEGACY_KEY = "connection";
 /** `owner/name`: letters, digits, `.`, `_` and `-` on each side of the slash. */
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/;
 
@@ -27,12 +34,42 @@ export function checkConnection(connection: Connection): Connection {
 /** `.` or `..`, which would step outside the repo's files. */
 const isDotPart = (part: string) => part === "." || part === "..";
 
-/** The connection saved on this computer, or undefined before one is made. */
-export async function savedConnection(): Promise<Connection | undefined> {
-  return Connection.safeParse(await figma.clientStorage.getAsync(STORAGE_KEY)).data;
+/** The repo, branch and path this file syncs from, whether or not this computer has a token for it. */
+export function fileSource(): RepoSource | undefined {
+  const written = figma.root.getPluginData(SOURCE_KEY);
+  return written ? RepoSource.safeParse(parsed(written)).data : undefined;
 }
 
-export const saveConnection = (connection: Connection) =>
-  figma.clientStorage.setAsync(STORAGE_KEY, connection);
+/** The connection this file syncs from, with this computer's token for its repo; undefined before one is made here. A
+ * file synced before connections were kept per file takes the one connection kept then, and keeps it as its own. */
+export async function savedConnection(): Promise<Connection | undefined> {
+  const legacy = Connection.safeParse(await figma.clientStorage.getAsync(LEGACY_KEY)).data;
+  const source = fileSource();
+  if (!source) {
+    if (!legacy || !(await syncedCollection())) return undefined;
+    await saveConnection(legacy);
+    return legacy;
+  }
+  const token = z.string().safeParse(await figma.clientStorage.getAsync(tokenKey(source.repo))).data;
+  if (token) return { ...source, token };
+  return legacy?.repo === source.repo ? { ...source, token: legacy.token } : undefined;
+}
 
-export const forgetConnection = () => figma.clientStorage.deleteAsync(STORAGE_KEY);
+const parsed = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
+
+export async function saveConnection({ token, ...source }: Connection): Promise<void> {
+  figma.root.setPluginData(SOURCE_KEY, JSON.stringify(source));
+  await figma.clientStorage.setAsync(tokenKey(source.repo), token);
+}
+
+/** Forgets this file's connection. The token stays on this computer: another file may read the same repo (an iPhone
+ * app's file and an Android app's). */
+export async function forgetConnection(): Promise<void> {
+  figma.root.setPluginData(SOURCE_KEY, "");
+}

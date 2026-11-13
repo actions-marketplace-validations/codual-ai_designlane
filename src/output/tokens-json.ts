@@ -6,6 +6,8 @@ import {
   type ColorToken,
   type DesignTokens,
   FRAMEWORK_NAMES,
+  type FrameworkId,
+  type FrameworkScan,
   type Platform,
   type ScanResult,
 } from "../scan/types.js";
@@ -89,29 +91,30 @@ function dimensions(prefix: string, values: number[], description: string): Grou
 }
 
 /**
- * Why a project with more than one framework can't have one tokens.json yet, or undefined when it has one.
+ * The tokens of one of the app's frameworks, `framework`, which a project with more than one must name. A scan that
+ * couldn't read the whole app says so, so a sync doesn't take what it missed for what the code dropped.
  */
-export function twoFrameworks(scan: ScanResult): string | undefined {
-  if (scan.frameworks.length < 2) return undefined;
-  const both = scan.frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
-  return `${scan.root} has ${both} code, and syncing both into one Figma file isn't supported yet. Run designmap on each app's own folder.`;
-}
-
-/**
- * The tokens of the app's framework; a project with two is refused rather than half-written. A scan that couldn't
- * read the whole app says so, so a sync doesn't take what it missed for what the code dropped.
- */
-export function toDesignTokens(scan: ScanResult): DesignTokensFile {
-  const refused = twoFrameworks(scan);
-  if (refused) throw new Error(refused);
+export function toDesignTokens(scan: ScanResult, framework?: FrameworkId): DesignTokensFile {
+  if (!framework && scan.frameworks.length > 1) {
+    const all = scan.frameworks.map((f) => FRAMEWORK_NAMES[f.framework]).join(" and ");
+    throw new Error(`${scan.root} has ${all} code: name the framework whose tokens to write.`);
+  }
   const app = path.basename(scan.root);
   const partial = scan.truncated || scan.unreadable.length > 0;
+  const read = scan.frameworks.find((f) => !framework || f.framework === framework);
+  // An empty file would read as an app with no tokens rather than the wrong app.
+  if (framework && !read) throw new Error(`${scan.root} has no ${FRAMEWORK_NAMES[framework]} code.`);
+  const several = scan.frameworks.length > 1 && read;
   const file: DesignTokensFile = {
-    $description: `Read from the code of ${app} by Designmap`,
+    $description: several
+      ? `Read from the ${FRAMEWORK_NAMES[read.framework]} code of ${app} by Designmap`
+      : `Read from the code of ${app} by Designmap`,
     $extensions: { designmap: { app, ...(partial ? { partial: true } : {}) } },
   };
-  const framework = scan.frameworks[0];
-  if (!framework) return file;
+  return read ? withTokens(file, read) : file;
+}
+
+function withTokens(file: DesignTokensFile, framework: FrameworkScan): DesignTokensFile {
   const { tokens } = framework;
   const platform = framework.platforms[0];
   if (platform && file.$extensions) file.$extensions.designmap.platform = platform;

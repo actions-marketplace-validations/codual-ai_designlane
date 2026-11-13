@@ -1,12 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { twoFrameworks } from "../output/tokens-json.js";
 import { writeOutputs } from "../output/write.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
 import { scanNotes } from "../scan/notes.js";
-import { type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
+import { FRAMEWORK_NAMES, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 
 const HELP = `designmap: map a mobile app's design system from its code
 
@@ -78,11 +77,15 @@ async function map(
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
   if (scan.frameworks.length === 0)
     throw new UsageError(`no ${SUPPORTED_FRAMEWORKS} code found in ${scan.root}`, 1);
-  const refused = twoFrameworks(scan);
-  if (refused) throw new UsageError(refused, 1);
   out(summary(scan));
   const written = await writeOutputs(scan, values.out ? path.resolve(values.out) : undefined);
-  out(`Wrote ${shown(written.tokens)}\n      ${shown(written.design)}`);
+  out(`Wrote ${[...written.tokens, written.design].map(shown).join("\n      ")}`);
+  if (written.removed.length) {
+    const now = written.tokens.map(shown).join(" or ");
+    error(
+      `designmap: removed ${written.removed.map(shown).join(", ")}, as the repo now has ${scan.frameworks.length === 1 ? "one app" : "more than one app"}: connect each Figma file to ${now}.`,
+    );
+  }
   return 0;
 }
 
@@ -121,14 +124,15 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** What was found, in a few lines. */
 function summary(scan: ScanResult): string {
+  const several = scan.frameworks.length > 1;
   return scan.frameworks
-    .map(({ screens, tokens }) => {
+    .map(({ framework, screens, tokens }) => {
       const pages = screens.filter((s) => s.kind === "screen").length;
       const colours = tokens.colors.length;
       const styles = tokens.typeStyles.length;
       const views = `${plural(pages, "screen")}, ${plural(screens.length - pages, "component")}`;
       const lines = [
-        `${path.basename(scan.root)}: ${views}`,
+        `${path.basename(scan.root)}${several ? ` (${FRAMEWORK_NAMES[framework]})` : ""}: ${views}`,
         `  ${plural(colours, "colour")}, ${plural(styles, "text style")}`,
       ];
       const top = tokens.colors.slice(0, 3).map((c) => `${c.name} (${c.uses})`);

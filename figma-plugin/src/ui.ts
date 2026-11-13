@@ -87,8 +87,10 @@ function nextPlan(status: string): number {
 const checking = (repo: string | undefined) => `Checking ${repo ?? "the repo"} for changes…`;
 
 /** Shows the repo connected, or the form to connect one. Any typed token is cleared: it's never shown again. */
-function showConnection(source: RepoSource | null): void {
+/** Shows the connected repo, or the form to connect one, filled with the repo the file syncs from when it's `saved`. */
+function showConnection(source: RepoSource | null, saved?: RepoSource): void {
   connectedRepo = source?.repo;
+  for (const [id, value] of Object.entries(saved ?? {})) element(id, HTMLInputElement).value = value;
   connectForm.hidden = source !== null;
   connected.hidden = source === null;
   connectedTo.textContent = source ? `Connected to ${source.repo} (${source.branch})` : "";
@@ -146,7 +148,7 @@ window.onmessage = (event: MessageEvent<unknown>) => {
     typeof data === "object" && data !== null && "pluginMessage" in data ? data.pluginMessage : undefined,
   );
   if (!message) return;
-  if (message.type === "connection") return showConnection(message.repo);
+  if (message.type === "connection") return showConnection(message.repo, message.saved);
   if (message.type === "plan" && message.id !== requested) return;
   setApplying(false);
   if (message.type === "plan") showPlan(message.id, message.summary);

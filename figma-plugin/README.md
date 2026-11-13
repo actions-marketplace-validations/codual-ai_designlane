@@ -11,6 +11,9 @@ Keeps a Figma file's variables and text styles in sync with an app's code.
 
 You can also pick a `tokens.json` file instead of connecting a repo.
 
+A repo with both an iPhone and an Android app gets a tokens file for each, `designmap/tokens.ios.json` and
+`designmap/tokens.android.json`: connect each Figma file to its app's path.
+
 ## Keeping tokens.json up to date
 
 Add this workflow to the app's repo as `.github/workflows/design-tokens.yml`. On every push to `main` it writes

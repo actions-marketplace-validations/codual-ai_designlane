@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { scanRepo, toDesignMd, toDesignTokens, writeOutputs } from "../../src/index.js";
+import { APP_TOKENS_FILES, scanRepo, toDesignMd, toDesignTokens, writeOutputs } from "../../src/index.js";
 import { linkNotes } from "../../src/output/screen-links.js";
 import { colorValue } from "../../src/output/tokens-json.js";
 import type { ColorToken, DesignTokens, ScanResult, TypeStyle } from "../../src/scan/types.js";
@@ -322,11 +322,37 @@ describe("writing", () => {
   it("writes tokens.json and DESIGN.md into designmap/ in the app, or where it's told", async () => {
     const scan = await shop();
     const { tokens, design } = await writeOutputs(scan);
-    expect(path.relative(scan.root, tokens)).toBe(path.join("designmap", "tokens.json"));
-    expect(JSON.parse(await readFile(tokens, "utf8"))).toEqual(toDesignTokens(scan));
+    expect(tokens.map((t) => path.relative(scan.root, t))).toEqual([path.join("designmap", "tokens.json")]);
+    expect(JSON.parse(await readFile(tokens[0] ?? "", "utf8"))).toEqual(toDesignTokens(scan));
     expect(await readFile(design, "utf8")).toBe(toDesignMd(scan));
     const elsewhere = path.join(await tempDir({}), "out");
     expect((await writeOutputs(scan, elsewhere)).design).toBe(path.join(elsewhere, "DESIGN.md"));
+  });
+});
+
+describe("an iPhone and an Android app in one repo", () => {
+  const both = async () =>
+    scanRepo(
+      await tempDir({
+        ...APP,
+        "android/Theme.kt": "import androidx.compose.ui.graphics.Color\nval Brand = Color(0xFF6650A4)",
+      }),
+    );
+
+  it("makes a caller name the app whose tokens to write, and refuses one the scan doesn't have", async () => {
+    const scan = await both();
+    expect(() => toDesignTokens(scan)).toThrow("name the framework whose tokens to write");
+    expect(toDesignTokens(scan, "compose").$extensions?.designmap.platform).toBe("android");
+    const ios = await scanRepo(await tempDir(APP));
+    expect(() => toDesignTokens(ios, "compose")).toThrow("has no Jetpack Compose code");
+  });
+
+  it("writes each app's tokens to its own file and returns the paths", async () => {
+    const scan = await both();
+    const { tokens, removed } = await writeOutputs(scan);
+    expect(tokens.map((t) => path.basename(t))).toEqual([APP_TOKENS_FILES.swiftui, APP_TOKENS_FILES.compose]);
+    expect(JSON.parse(await readFile(tokens[1] ?? "", "utf8"))).toEqual(toDesignTokens(scan, "compose"));
+    expect(removed).toEqual([]);
   });
 });
 
