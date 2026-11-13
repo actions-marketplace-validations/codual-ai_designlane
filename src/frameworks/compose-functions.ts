@@ -89,10 +89,26 @@ const MAX_EXPRESSION_GAP = 200;
 /** A capitalised name being called, `Name(` or `Name {`: possibly another view placed inside this one. */
 export const CALL = /(?<![\w.])([A-Z]\w*)\s*[({]/g;
 
-export const viewsByName = (views: ComposableFunction[]) => groupBy(views, (v) => v.name);
+/** Views by name, one per file: overloads in a file are one view, so a call to them, from any file, finds it. It's
+ * the first, or the first built to hold views (`Rail(content)` beside `Rail(x)`), so a call's trailing block isn't
+ * taken for a screen of its own. */
+export function viewsByName(views: ComposableFunction[]): Map<string, ComposableFunction[]> {
+  const chosen = new Map<string, ComposableFunction>();
+  for (const v of views) {
+    const key = `${v.source.rel}#${v.name}`;
+    const before = chosen.get(key);
+    if (!before || (v.holdsViews && !before.holdsViews)) chosen.set(key, v);
+  }
+  return groupBy([...chosen.values()], (v) => v.name);
+}
+
+/** The view standing for `view` and its overloads in `byName` (see `viewsByName`). */
+export const overloadFor = (byName: Map<string, ComposableFunction[]>, view: ComposableFunction) =>
+  byName.get(view.name)?.find((v) => v.source === view.source) ?? view;
 
 /** A composable that runs a side effect and draws nothing, `NewIntentEffect`, by Compose's naming. */
-const EFFECT = /Effects?$/;
+/** A view named as an effect (`AuthEffect`), drawing nothing. */
+export const EFFECT = /Effects?$/;
 
 /** A view a destination draws, and the span of its call: what navigation inside that call is made from. */
 export interface DrawnView {

@@ -567,6 +567,350 @@ describe("a destination drawing one screen or another", () => {
   });
 });
 
+describe("parts of a screen that navigate by themselves", () => {
+  const routes = [
+    "@Composable fun AppNav() {",
+    '  NavHost(navController, startDestination = "home") {',
+    '    composable("home") { Home() }',
+    '    composable("search") { Search() }',
+    '    composable("artist/{id}") { Artist() }',
+    "  }",
+    "}",
+  ].join("\n");
+
+  it("credits a menu's own navigation to every screen holding it", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Artist") +
+        "@Composable fun Home() { LazyColumn { item { SongMenu() } } }\n" +
+        "@Composable fun Search() { LazyColumn { item { SongRow() } } }\n" +
+        "@Composable fun SongRow() { SongMenu() }\n" +
+        '@Composable fun SongMenu() { val nav = LocalNavController.current\n Button(onClick = { nav.navigate("artist/$id") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(expect.arrayContaining(["Home -> Artist (push)", "Search -> Artist (push)"]));
+  });
+
+  it("leaves out the app's frame: the view holding the navigation, what places it, and parts only it places", async () => {
+    const { links } = await app({
+      "app/Views.kt": plain("Home") + plain("Search") + plain("Artist"),
+      "app/App.kt": [
+        '@Composable fun MusicApp() { Scaffold(topBar = { TopBar(onSearch = { navController.navigate("search") }) }) { Shell() } }',
+        "@Composable fun Shell() { Box { AppNav() } }",
+        '@Composable fun Rail(content: @Composable () -> Unit) { NavigationRail { item(onClick = { navController.navigate("artist/$id") }) }; content() }',
+      ].join("\n"),
+      "app/Nav.kt": routes.replace(
+        'composable("search") { Search() }',
+        'composable("search") { Rail { Search() } }',
+      ),
+    });
+    expect(links).toEqual([]);
+  });
+
+  it("doesn't take a part's own callback for the navigation helper of the same name", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Artist") +
+        plain("Search") +
+        "@Composable fun Home() { LazyColumn { item { SongRow(navigateToArtist = {}) } } }\n" +
+        "@Composable fun SongRow(navigateToArtist: (String) -> Unit) { Button(onClick = { navigateToArtist(id) }) }\n",
+      "app/Helpers.kt": 'fun NavController.navigateToArtist(id: String) = navigate("artist/$id")\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual([]);
+  });
+
+  it("still reads a helper called on a navigator", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Artist") +
+        plain("Search") +
+        "@Composable fun Home() { LazyColumn { item { SongRow() } } }\n" +
+        "@Composable fun SongRow() { Button(onClick = { LocalNavController.current.navigateToArtist(id) }) }\n",
+      "app/Helpers.kt": 'fun NavController.navigateToArtist(id: String) = navigate("artist/$id")\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("reads a nested navigation graph's links with its own destinations, not the view holding it", async () => {
+    const { links } = await app({
+      "app/Views.kt": plain("Welcome") + plain("Server") + plain("Validate"),
+      "app/Setup.kt": [
+        "@Composable fun SetupHost() {",
+        '  NavHost(setupNav, startDestination = "server") {',
+        '    composable("server") { Server(onOpen = { setupNav.navigate("validate") }) }',
+        '    composable("validate") { Validate() }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "app/Nav.kt": [
+        "@Composable fun AppNav() {",
+        '  NavHost(navController, startDestination = "welcome") {',
+        '    composable("welcome") { Welcome(onOpen = { navController.navigate("setup") }) }',
+        '    composable("setup") { SetupHost() }',
+        "  }",
+        "}",
+      ].join("\n"),
+    });
+    expect(links).toContain("Server -> Validate (push)");
+    expect(links.filter((l) => l.startsWith("SetupHost"))).toEqual([]);
+  });
+
+  it("treats overloads in one file as one view when finding the frame", async () => {
+    const { links } = await app({
+      "app/Views.kt": plain("Home") + plain("Search") + plain("Artist"),
+      "app/App.kt":
+        '@Composable fun MusicApp() { Scaffold(topBar = { TopBar(onSearch = { navController.navigate("search") }) }) { AppNav() } }\n' +
+        "@Composable fun Rail(x: Int) { Text(x) }\n" +
+        '@Composable fun Rail(content: @Composable () -> Unit) { NavigationRail { item(onClick = { navController.navigate("artist/$id") }) }; content() }\n',
+      "app/Nav.kt": `@Composable fun AppNav() { AppNav(rememberNavController()) }\n${routes
+        .replace("fun AppNav()", "fun AppNav(navController: NavHostController)")
+        .replace('composable("search") { Search() }', 'composable("search") { Rail { Search() } }')}`,
+    });
+    expect(links).toEqual([]);
+  });
+
+  it("credits parts to a screen holding a nested graph, such as its own tabs", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        plain("Tab") +
+        '@Composable fun Home() { Scaffold(bottomBar = { MiniPlayer() }) { NavHost(inner, "tab") { composable("tab") { Tab() } } } }\n' +
+        '@Composable fun MiniPlayer() { Button(onClick = { navController.navigate("search") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toContain("Home -> Search (push)");
+  });
+
+  it("reads a helper called through a safe call", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Artist") +
+        plain("Search") +
+        "@Composable fun Home() { LazyColumn { item { SongRow() } } }\n" +
+        "@Composable fun SongRow() { Button(onClick = { nav?.navigateToArtist(id) }) }\n",
+      "app/Helpers.kt": 'fun NavController.navigateToArtist(id: String) = navigate("artist/$id")\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  speedIt("reads one part placed in tens of thousands of views quickly", async () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 80 }, (_, f) => [
+        `app/V${f}.kt`,
+        Array.from({ length: 500 }, (_, i) => `@Composable fun V${f}x${i}() { Common() }\n`).join(""),
+      ]),
+    );
+    const started = performance.now();
+    await app({
+      ...files,
+      "app/Views.kt": `${plain("Artist") + plain("Search")}@Composable fun Home() { V0x0() }\n@Composable fun Common() { nav.navigate("artist/$id") }\n`,
+      "app/Nav.kt": routes,
+    });
+    expect(performance.now() - started).toBeLessThan(3_000);
+  });
+
+  it("reads a part's bare call to a navigation helper it doesn't take as a callback", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Artist") +
+        plain("Search") +
+        "@Composable fun Home() { LazyColumn { item { SongRow() } } }\n" +
+        "@Composable fun SongRow() { Button(onClick = { openArtist(id) }) }\n",
+      "app/Helpers.kt": 'fun openArtist(id: String) { navController.navigate("artist/$id") }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("keeps an effect drawn beside a screen as the destination's navigation", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Home") +
+        plain("Search") +
+        plain("Artist") +
+        '@Composable fun AuthEffect() { LaunchedEffect(Unit) { navController.navigate("artist/$id") } }\n',
+      "app/Nav.kt": routes.replace(
+        'composable("home") { Home() }',
+        'composable("home") { Home(); AuthEffect() }',
+      ),
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("leaves out a part only the frame places, but not one a screen also places", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        "@Composable fun Home() { SearchButton() }\n" +
+        '@Composable fun SearchButton() { IconButton(onClick = { navController.navigate("search") }) }\n',
+      "app/App.kt":
+        "@Composable fun MusicApp() { Column { TopBar(); SearchButton(); AppNav() } }\n" +
+        '@Composable fun TopBar() { IconButton(onClick = { navController.navigate("artist/$id") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Search (push)"]);
+  });
+
+  it("keeps a part's push and replace to the same screen apart", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        "@Composable fun Home() { Menu() }\n" +
+        '@Composable fun Menu() { Item(onClick = { nav.navigate("search") }); Item(onClick = { nav.resetRoot("search") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Search (push)", "Home -> Search (replace)"]);
+  });
+
+  it("opens a detail pane from a part of the list pane beside it, and counts a part's calls to undeclared routes", async () => {
+    const { compose, links } = await app({
+      "app/Views.kt":
+        plain("Topic") +
+        "@Composable fun Login() { LoginHelp() }\n" +
+        "@Composable fun Topics() { TopicRow() }\n" +
+        "@Composable fun TopicRow() { Row(onClick = { backStack.add(TopicKey); backStack.add(PlayerKey) }) }\n" +
+        "@Composable fun LoginHelp() { Text(onClick = { backStack.add(TopicKey) }) }\n",
+      "app/Nav.kt": [
+        "@Composable fun Nav() {",
+        "  val backStack = rememberNavBackStack(LoginKey)",
+        "  NavDisplay(backStack, entryProvider = entryProvider {",
+        "    entry<LoginKey> { Login() }",
+        "    entry<TopicsKey>(metadata = ListDetailSceneStrategy.listPane()) { Topics() }",
+        "    entry<TopicKey>(metadata = ListDetailSceneStrategy.detailPane()) { Topic() }",
+        "  })",
+        "}",
+      ].join("\n"),
+    });
+    expect(links).toEqual(["Login -> Topic (push)", "Topics -> Topic (pane)"]);
+    expect(compose.unresolvedLinks).toBe(1);
+  });
+
+  it("credits an effect inside a screen's body once", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        "@Composable fun Home() { Column { AuthEffect() } }\n" +
+        '@Composable fun AuthEffect() { LaunchedEffect(Unit) { navController.navigate("artist/$id") } }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("reads a lowercase composable, which isn't a view, as a helper", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Home") +
+        plain("Search") +
+        plain("Artist") +
+        '@Composable fun openOnStart() { LaunchedEffect(Unit) { navController.navigate("artist/$id") } }\n',
+      "app/Nav.kt": routes.replace(
+        'composable("home") { Home() }',
+        'composable("home") { Home(); openOnStart() }',
+      ),
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("credits an overloaded part placed through an overloaded row to the screen", async () => {
+    const { links } = await app({
+      "app/Views.kt": `${plain("Search") + plain("Artist")}@Composable fun Home() { SongRow(song) }\n`,
+      "app/Rows.kt":
+        "@Composable fun SongRow(id: Int) { Text(id) }\n" +
+        "@Composable fun SongRow(song: Song) { ArtistText(song.artists) }\n",
+      "app/Parts.kt":
+        "@Composable fun ArtistText(name: String) { Text(name) }\n" +
+        '@Composable fun ArtistText(artists: List<Artist>) { Text(onClick = { nav.navigate("artist/$id") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("opens a detail pane from a shared part as a pane only when every screen holding it is a list pane", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Topic") +
+        "@Composable fun Login() { TopicRow() }\n" +
+        "@Composable fun Topics() { TopicRow() }\n" +
+        "@Composable fun TopicRow() { Row(onClick = { backStack.add(TopicKey) }) }\n",
+      "app/Nav.kt": [
+        "@Composable fun Nav() {",
+        "  val backStack = rememberNavBackStack(LoginKey)",
+        "  NavDisplay(backStack, entryProvider = entryProvider {",
+        "    entry<LoginKey> { Login() }",
+        "    entry<TopicsKey>(metadata = ListDetailSceneStrategy.listPane()) { Topics() }",
+        "    entry<TopicKey>(metadata = ListDetailSceneStrategy.detailPane()) { Topic() }",
+        "  })",
+        "}",
+      ].join("\n"),
+    });
+    expect(links).toEqual(["Login -> Topic (push)", "Topics -> Topic (push)"]);
+  });
+
+  it("credits parts to a screen holding a nested graph through a view inside it", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        plain("Tab") +
+        "@Composable fun Home() { HomeContent() }\n" +
+        '@Composable fun HomeContent() { Scaffold(topBar = { IconButton(onClick = { navController.navigate("artist/$id") }) }, bottomBar = { MiniPlayer() }) { NavHost(inner, "tab") { composable("tab") { Tab() } } } }\n' +
+        '@Composable fun MiniPlayer() { Button(onClick = { navController.navigate("search") }) }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(expect.arrayContaining(["Home -> Artist (push)", "Home -> Search (push)"]));
+  });
+
+  it("finds a part's own callback past a long header, and not inside another parameter's function type", async () => {
+    const extra = Array.from(
+      { length: 20 },
+      (_, i) => `modifierNumber${i}: Modifier = Modifier.padding(4.dp),`,
+    ).join(" ");
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        "@Composable fun Home() { LazyColumn { item { LongRow(); TypedRow() } } }\n" +
+        `@Composable fun LongRow(${extra} navigateToArtist: (String) -> Unit = {}) { Button(onClick = { navigateToArtist(id) }) }\n` +
+        "@Composable fun TypedRow(onEvent: (navigateToArtist: String) -> Unit = {}) { Button(onClick = { navigateToArtist(id) }) }\n",
+      "app/Helpers.kt": 'fun navigateToArtist(id: String) { navController.navigate("artist/$id") }\n',
+      "app/Nav.kt": routes,
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  it("reads navigation in another overload of a drawn screen", async () => {
+    const { links } = await app({
+      "app/Views.kt":
+        plain("Search") +
+        plain("Artist") +
+        "@Composable fun Home(navController: NavController) { Home(state = 1, navController) }\n" +
+        '@Composable fun Home(state: Int, navController: NavController) { Button(onClick = { navController.navigate("artist/$id") }) }\n',
+      "app/Nav.kt": routes.replace("{ Home() }", "{ Home(navController) }"),
+    });
+    expect(links).toEqual(["Home -> Artist (push)"]);
+  });
+
+  speedIt("reads thousands of parts placed in thousands of views quickly", async () => {
+    const parts = Array.from(
+      { length: 3000 },
+      (_, i) => `@Composable fun P${i}() { P${i + 1}(); nav.navigate("artist/$id") }\n`,
+    ).join("");
+    const started = performance.now();
+    await app({
+      "app/Views.kt": `${plain("Artist") + plain("Search")}@Composable fun Home() { P0() }\n${parts}`,
+      "app/Nav.kt": routes,
+    });
+    expect(performance.now() - started).toBeLessThan(3_000);
+  });
+});
+
 describe("Compose views", () => {
   it("makes what an Activity draws first a screen, leaves previews out, and keeps containers components", async () => {
     const { compose, kindOf } = await app({

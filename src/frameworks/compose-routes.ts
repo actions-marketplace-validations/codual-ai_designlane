@@ -1,6 +1,6 @@
 /** The routes a span of Compose code opens: navigation calls, routes held in variables, and the app's own helpers. */
 
-import { bodyAfter } from "./compose-functions.js";
+import { bodyAfter, EFFECT } from "./compose-functions.js";
 import { type Destination, routeIn, routeOf } from "./compose-navigation.js";
 import { callArguments, FUNCTION_DECLARATION, isDeclared } from "./kotlin-calls.js";
 import { type KotlinSource, moduleOf } from "./kotlin-sources.js";
@@ -29,13 +29,13 @@ export function navigation(m: RegExpMatchArray): { navigates: boolean; replaces:
   };
 }
 /** A dotted name, the way the code names a route type or constant. */
-const NAME = /(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/g;
+const NAME = /(?<![\w.])[A-Za-z_]\w*(?:\??\.[A-Za-z_]\w*)*/g;
 /** How far back a name is checked for being in `popUpTo(`, `popBackStack(` and the like, which don't open it. */
 const NOT_OPENING_CHARS = 40;
 const NOT_OPENING =
   /\b(?:popUpTo|popBackStack|getBackStackEntry|toRoute|hasRoute|navigateUp|removeLast|remove|contains|indexOf|PopUpTo)\s*[(<]\s*$|\bis\s+$/;
 /** A navigation host, whose arguments name where it starts rather than a destination being opened. */
-const HOST_CALL = /(?<![\w.])(?:NavHost|NavDisplay)\s*\(/g;
+export const HOST_CALL = /(?<![\w.])(?:NavHost|NavDisplay)\s*\(/g;
 /** How far back a navigation call's argument is looked for being assigned, `val screen = Screen.Podcast(uri)`. */
 const MAX_HELD = 400;
 
@@ -52,6 +52,12 @@ export function heldRoute(source: KotlinSource, argument: string, call: number) 
 /** How many helpers deep a helper may navigate through another: `backToHome()` calls `navigateToDiscover()`. */
 const MAX_HELPER_DEPTH = 3;
 
+/** `@Composable` right before a `fun`, past other annotations and modifiers. */
+const COMPOSABLE_BEFORE =
+  /@Composable\b(?:\s*@[\w.]+(?:\([^()]*\))?|\s+(?:private|internal|public|protected|inline|override|actual|expect)\b)*\s*$/;
+/** How far before a `fun` its annotations are read. */
+const MAX_ANNOTATIONS = 300;
+
 /** Per module, functions that navigate to one route (`navigateToTopic`); a name used for two routes is dropped. */
 export type Helpers = Map<string, Map<string, Named | null>>;
 
@@ -59,6 +65,40 @@ export function helperRoutes(sources: KotlinSource[], byKey: Map<string, Destina
   let helpers: Helpers = new Map();
   for (let depth = 0; depth < MAX_HELPER_DEPTH; depth++) helpers = helpersUsing(sources, byKey, helpers);
   return helpers;
+}
+
+/** Per file, the spans its destinations are declared in, merged and in order. */
+export function graphSpans(byKey: Map<string, Destination[]>): Map<KotlinSource, [number, number][]> {
+  const bySource = new Map<KotlinSource, [number, number][]>();
+  for (const d of [...byKey.values()].flat()) {
+    if (!d.declared) continue;
+    const spans = bySource.get(d.source);
+    if (spans) spans.push(d.declared.block);
+    else bySource.set(d.source, [d.declared.block]);
+  }
+  for (const [source, spans] of bySource) {
+    const merged: [number, number][] = [];
+    for (const [open, close] of spans.sort((a, b) => a[0] - b[0])) {
+      const last = merged.at(-1);
+      if (last && open <= last[1]) last[1] = Math.max(last[1], close);
+      else merged.push([open, close]);
+    }
+    bySource.set(source, merged);
+  }
+  return bySource;
+}
+
+/** Whether one of `spans` (disjoint, in order) overlaps `[start, end)`, by binary search for the first ending after
+ * `start`. */
+export function overlaps(spans: [number, number][], [start, end]: [number, number]): boolean {
+  let [low, high] = [0, spans.length];
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if ((spans[mid]?.[1] ?? 0) <= start) low = mid + 1;
+    else high = mid;
+  }
+  const first = spans[low];
+  return first !== undefined && first[0] < end;
 }
 
 function helpersUsing(sources: KotlinSource[], byKey: Map<string, Destination[]>, known: Helpers): Helpers {
@@ -94,7 +134,12 @@ function navigationByFunction(
     const open = (m.index ?? 0) + m[0].length - 1;
     const { close } = callArguments(source, open);
     const body = close > open ? bodyAfter(source, close + 1) : undefined;
-    return body && m[1] ? [{ name: m[1], body }] : [];
+    // A view as `composableFunctions` reads one, capitalised and `@Composable`; an effect stays a helper.
+    const view =
+      /^[A-Z]/.test(m[1] ?? "") &&
+      !EFFECT.test(m[1] ?? "") &&
+      COMPOSABLE_BEFORE.test(source.code.slice(Math.max(0, (m.index ?? 0) - MAX_ANNOTATIONS), m.index));
+    return body && m[1] ? [{ name: m[1], body, view }] : [];
   });
   // Sorted, since navigation calls and helper calls are found in two passes: each is matched to the function it's in
   // by walking both lists in file order.
@@ -113,7 +158,9 @@ function navigationByFunction(
     }
     while (stack.length && (stack.at(-1)?.body[1] ?? 0) < call.at) stack.pop();
     const innermost = stack.at(-1);
-    if (!innermost) continue;
+    // A view's navigation is read as the view's (a drawn screen's, or a part's), not as a helper's: a view holding a
+    // nested `NavHost` isn't a helper for its destinations' routes.
+    if (!innermost || innermost.view) continue;
     const list = opened.get(innermost.name) ?? [];
     list.push(call);
     opened.set(innermost.name, list);

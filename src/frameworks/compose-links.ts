@@ -3,9 +3,25 @@
 
 import { groupBy } from "../scan/counting.js";
 import type { Opening } from "../scan/types.js";
-import type { ComposableFunction, DrawnView } from "./compose-functions.js";
+import {
+  CALL,
+  type ComposableFunction,
+  type DrawnView,
+  EFFECT,
+  overloadFor,
+  viewsByName,
+} from "./compose-functions.js";
 import { type Destination, drawingViews, drawnBy, routeIn } from "./compose-navigation.js";
-import { helperRoutes, NAVIGATE_CALL, type Named, navigation, routesIn } from "./compose-routes.js";
+import {
+  graphSpans,
+  type Helpers,
+  HOST_CALL,
+  NAVIGATE_CALL,
+  type Named,
+  navigation,
+  overlaps,
+  routesIn,
+} from "./compose-routes.js";
 import { callArguments, isDeclared } from "./kotlin-calls.js";
 import { type KotlinSource, nearestTo, treeOf } from "./kotlin-sources.js";
 
@@ -20,6 +36,12 @@ export interface Link {
   at: number;
 }
 
+/** A link made by a view that only sits in screens (a row, a menu): `screenLinks` credits it to the screens
+ * holding it. */
+export type PartLink = Pick<Link, "fromView" | "to" | "opening" | "source" | "at">;
+
+/** How many parts deep a part is followed up to a list pane, as `screenLinks` credits it. */
+const MAX_LEVELS = 4;
 /** How many enclosing blocks are searched for the function declaring a destination. */
 const MAX_ENCLOSING = 12;
 /** How far back a function's header is read from its body's `{`. */
@@ -39,9 +61,9 @@ const NAMED_CALL = /(?<!\w)(\w+)\s*\(/g;
 /** How far back a call is checked for being a declaration, `fun NavGraphBuilder.homeEntry(`. */
 const DECLARATION_CHARS = 80;
 
-export function links(sources: KotlinSource[], all: Destination[]): Link[] {
+export function links(sources: KotlinSource[], all: Destination[], helpers: Helpers): Link[] {
   const byKey = groupBy(all, (d) => d.key);
-  const helpers = helperRoutes(sources, byKey);
+  const blocks = graphSpans(byKey);
   const found: Link[] = [];
   const add = (
     from: Destination,
@@ -66,14 +88,203 @@ export function links(sources: KotlinSource[], all: Destination[]): Link[] {
     for (const span of from.declared?.own ?? [])
       for (const named of routesIn(from.source, span, byKey, helpers, true)) add(from, named, from.source);
     for (const view of drawingViews(from))
-      for (const named of routesIn(view.source, view.body, byKey, helpers, false))
-        add(from, named, view.source, [view]);
+      for (const span of ownBody(view, blocks))
+        for (const named of routesIn(view.source, span, byKey, helpers, false))
+          add(from, named, view.source, [view]);
   }
   for (const { from, source, span, param } of callbacksPassed(sources, all)) {
     const madeIn = param ? usingParameter(from, param) : undefined;
     for (const named of routesIn(source, span, byKey, helpers, true)) add(from, named, source, madeIn);
   }
   return distinct(found);
+}
+
+/** Links made by views no destination draws, navigating by themselves (`navController.navigate("artist/$id")` in a
+ * song's menu). The app's frame is left out (see `frames`), and so are parts only it places (a rail around each
+ * screen). */
+export function partLinks(
+  views: ComposableFunction[],
+  all: Destination[],
+  helpers: Helpers,
+): { links: PartLink[]; unresolved: number } {
+  const byKey = groupBy(all, (d) => d.key);
+  const drawn = new Set(all.flatMap(drawingViews));
+  const drawing = new Set([...drawn].map(sameView));
+  const listPanes = new Set(
+    all
+      .filter((d) => d.listPane)
+      .flatMap(drawingViews)
+      .map(sameView),
+  );
+  const byName = viewsByName(views);
+  const { outside, holders } = frames(views, byName, all, drawing);
+  const found: PartLink[] = [];
+  let unresolved = 0;
+  for (const view of views) {
+    // An effect beside a screen is read as a helper of the destination drawing it (see `navigationByFunction`). A
+    // drawn view's other overloads (`Home(state, nav)` behind `Home(nav)`) are read here, credited to it.
+    if (drawn.has(view) || outside.has(sameView(view)) || EFFECT.test(view.name)) continue;
+    const seen = new Set<string>();
+    for (const named of routesIn(view.source, view.body, byKey, helpers, false)) {
+      if (ownCallback(view, named.at)) continue;
+      const candidates = (byKey.get(named.key) ?? []).filter((d) => samePath(named.path, d.path));
+      const to = nearestTo(candidates, view.source, (d) => d.source);
+      if (!to) continue;
+      // A detail pane opens beside the list pane holding the part; from anywhere else it's pushed. One opening is
+      // credited to every screen holding the part, so it's a pane only when each of them is a list pane.
+      const screens = to.opening === "pane" ? screensHolding(view, holders, drawing) : [];
+      const pane = screens.length > 0 && screens.every((k) => listPanes.has(k));
+      const opening = named.replaces ? "replace" : to.opening === "pane" && !pane ? "push" : to.opening;
+      const key = `${to.key}:${to.path}:${opening}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Placements name the overload standing for the rest.
+      found.push({ fromView: overloadFor(byName, view), to, opening, source: view.source, at: named.at });
+    }
+    unresolved += unresolvedIn(view.source, view.body, byKey);
+  }
+  return { links: found, unresolved };
+}
+
+/** Overloads in one file are one view, as placements can't tell them apart. */
+const sameView = (view: ComposableFunction) => `${view.source.rel}#${view.name}`;
+
+/** Whether the helper named `at` is the view's own parameter (`navigateToArtist: (String) -> Unit`), called bare. */
+function ownCallback(view: ComposableFunction, at: number): boolean {
+  const { code } = view.source;
+  if (code[at] === "(") return false;
+  const name = code.slice(at).match(/^[\w.?]+/)?.[0] ?? "";
+  if (name.includes(".") || code.slice(at - 2, at) === "::") return false;
+  return parameterNames(view).includes(name);
+}
+
+/** A parameter's name at the start of its part of the list, past annotations and modifiers. */
+const PARAMETER =
+  /^\s*(?:@[\w.]+(?:\([^()]*\))?\s+)*(?:(?:val|var|crossinline|noinline|vararg)\s+)*(\w+)\s*:/;
+
+/** The names in a view's own parameter list, not those inside a parameter's function type
+ * (`onEvent: (navigateToArtist: String) -> Unit`). */
+function parameterNames(view: ComposableFunction): string[] {
+  const { code } = view.source;
+  let fun = view.body[0];
+  do fun = code.lastIndexOf("fun", fun - 1);
+  while (fun > 0 && (/\w/.test(code[fun - 1] ?? "") || /\w/.test(code[fun + 3] ?? "")));
+  const open = code.indexOf("(", fun + 3);
+  const close = open === -1 ? undefined : treeOf(view.source).closeOf.get(open);
+  if (fun < 0 || close === undefined || close > view.body[0]) return [];
+  const names: string[] = [];
+  let [depth, start] = [0, open + 1];
+  for (let i = open + 1; i <= close; i++) {
+    const c = code[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if ((c === ")" || c === "]" || c === "}") && i < close) depth--;
+    if ((c === "," && depth === 0) || i === close) {
+      const found = code.slice(start, i).match(PARAMETER)?.[1];
+      if (found) names.push(found);
+      start = i + 1;
+    }
+  }
+  return names;
+}
+
+/** The drawn views (by `sameView`) a part sits in, up to `MAX_LEVELS` deep: the screens it's credited to. */
+function screensHolding(
+  view: ComposableFunction,
+  holders: Map<string, Set<ComposableFunction>>,
+  drawing: Set<string>,
+): string[] {
+  const found = new Set<string>();
+  let level = [sameView(view)];
+  const seen = new Set(level);
+  for (let depth = 0; depth < MAX_LEVELS && level.length; depth++) {
+    const next: string[] = [];
+    for (const key of level)
+      for (const holder of holders.get(key) ?? []) {
+        const k = sameView(holder);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (drawing.has(k)) found.add(k);
+        else next.push(k);
+      }
+    level = next;
+  }
+  return [...found];
+}
+
+const HOST = new RegExp(HOST_CALL.source);
+
+/** The views outside every screen, by `sameView`: those holding the app's navigation (a `NavHost(…)`, a graph's
+ * destinations) and those placing them, up to a view a destination draws, which make the app's frame; and the parts
+ * only the frame places. The frame's links (a top bar's search) belong to every screen it shows, which isn't read yet.
+ * Also, for each view, the views placing it. */
+function frames(
+  views: ComposableFunction[],
+  byName: Map<string, ComposableFunction[]>,
+  all: Destination[],
+  drawing: Set<string>,
+) {
+  const graphs = graphSpans(groupBy(all, (d) => d.key));
+  const holders = new Map<string, Set<ComposableFunction>>();
+  const placed = new Map<string, Set<string>>();
+  const add = <T>(map: Map<string, Set<T>>, key: string, item: T) => {
+    const set = map.get(key);
+    if (set) set.add(item);
+    else map.set(key, new Set([item]));
+  };
+  const pending: ComposableFunction[] = [];
+  for (const view of views) {
+    const body = view.source.code.slice(...view.body);
+    if (overlaps(graphs.get(view.source) ?? [], view.body) || HOST.test(body)) pending.push(view);
+    for (const m of body.matchAll(CALL)) {
+      const part = nearestTo(byName.get(m[1] ?? "") ?? [], view.source, (v) => v.source);
+      if (!part || sameView(part) === sameView(view)) continue;
+      add(holders, sameView(part), view);
+      add(placed, sameView(view), sameView(part));
+    }
+  }
+  // A screen holding a nested graph (tabs under its own bar), itself or through views in it, isn't the frame: its
+  // parts are its own.
+  const inScreens = new Set(drawing);
+  const down = [...drawing];
+  for (let key = down.pop(); key; key = down.pop())
+    for (const part of placed.get(key) ?? [])
+      if (!inScreens.has(part)) {
+        inScreens.add(part);
+        down.push(part);
+      }
+  const outside = new Set<string>();
+  for (let view = pending.pop(); view; view = pending.pop()) {
+    const key = sameView(view);
+    if (outside.has(key) || inScreens.has(key)) continue;
+    outside.add(key);
+    pending.push(...(holders.get(key) ?? []));
+  }
+  // A part only the frame places is outside screens too (a rail around each). Only one level down: a frame-only part's
+  // own parts (a player sheet's menus) stay, since the frame's overlays open screens of their own.
+  const frame = new Set(outside);
+  for (const key of frame)
+    for (const part of placed.get(key) ?? [])
+      if (!inScreens.has(part) && [...(holders.get(part) ?? [])].every((h) => frame.has(sameView(h))))
+        outside.add(part);
+  return { outside, holders };
+}
+
+/** A view's body without the destinations declared in it (a nested `NavHost`): their links are read with them.
+ * `blocks` are disjoint and in order (`graphSpans`). */
+function ownBody(
+  view: ComposableFunction,
+  blocks: Map<KotlinSource, [number, number][]>,
+): [number, number][] {
+  const [start, end] = view.body;
+  const spans: [number, number][] = [];
+  let at = start;
+  for (const [open, close] of blocks.get(view.source) ?? []) {
+    if (close <= at || open >= end) continue;
+    if (open > at) spans.push([at, open]);
+    at = Math.max(at, close);
+  }
+  if (at < end) spans.push([at, end]);
+  return spans;
 }
 
 /** The views of `from` a link made at `at` in `source` is made from: the one whose call holds it
@@ -122,23 +333,29 @@ export const samePath = (written: string, path: string) => written === path || p
 /** Navigation calls naming a route the app doesn't declare (a library's, say), so no link can be drawn. */
 export function unresolvedCalls(all: Destination[]): number {
   const byKey = groupBy(all, (d) => d.key);
+  const blocks = graphSpans(byKey);
   let count = 0;
-  const spansOf = (d: Destination): [KotlinSource, [number, number]][] => [
-    ...(d.declared?.own ?? []).map((span): [KotlinSource, [number, number]] => [d.source, span]),
-    ...drawingViews(d).map((v): [KotlinSource, [number, number]] => [v.source, v.body]),
-  ];
   for (const d of all) {
-    for (const [source, [start, end]] of spansOf(d)) {
-      for (const m of source.code.slice(start, end).matchAll(NAVIGATE_CALL)) {
-        if (!navigation(m).navigates) continue;
-        const open = start + (m.index ?? 0) + m[0].length - 1;
-        const first = callArguments(source, open).args[0];
-        const route = first
-          ? routeIn(source.written.slice(first.at, first.at + first.value.length))
-          : undefined;
-        if (route && !(byKey.get(route.key) ?? []).some((c) => samePath(route.path, c.path))) count++;
-      }
-    }
+    for (const span of d.declared?.own ?? []) count += unresolvedIn(d.source, span, byKey);
+    for (const v of drawingViews(d))
+      for (const span of ownBody(v, blocks)) count += unresolvedIn(v.source, span, byKey);
+  }
+  return count;
+}
+
+/** Navigation calls in a span naming a route the app doesn't declare. */
+function unresolvedIn(
+  source: KotlinSource,
+  [start, end]: [number, number],
+  byKey: Map<string, Destination[]>,
+) {
+  let count = 0;
+  for (const m of source.code.slice(start, end).matchAll(NAVIGATE_CALL)) {
+    if (!navigation(m).navigates) continue;
+    const open = start + (m.index ?? 0) + m[0].length - 1;
+    const first = callArguments(source, open).args[0];
+    const route = first ? routeIn(source.written.slice(first.at, first.at + first.value.length)) : undefined;
+    if (route && !(byKey.get(route.key) ?? []).some((c) => samePath(route.path, c.path))) count++;
   }
   return count;
 }

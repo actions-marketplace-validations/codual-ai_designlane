@@ -7,11 +7,13 @@ import {
   CALL,
   type ComposableFunction,
   composableFunctions,
+  overloadFor,
   viewsByName,
   viewsIn,
 } from "./compose-functions.js";
-import { type Link, links, samePath, unresolvedCalls } from "./compose-links.js";
+import { links, type PartLink, partLinks, samePath, unresolvedCalls } from "./compose-links.js";
 import { type Destination, destinations, drawnBy, startRoutes } from "./compose-navigation.js";
+import { helperRoutes } from "./compose-routes.js";
 import { type KotlinSource, nearestTo, treeOf } from "./kotlin-sources.js";
 import type { ViewLink, ViewPlacement, ViewRef } from "./plugin.js";
 import { lineNumbers } from "./source-text.js";
@@ -57,7 +59,12 @@ export function composeViews(sources: KotlinSource[]): ComposeViews {
   const presented = new Set(rootViews);
   for (const d of all) for (const view of drawnBy(d)) presented.add(view);
   const { placedIn, pairs } = placements(views);
-  const linked = viewLinks([...links(sources, navigation), ...circuit.links]);
+  const helpers = helperRoutes(
+    sources,
+    groupBy(navigation, (d) => d.key),
+  );
+  const parts = partLinks(views, navigation, helpers);
+  const linked = viewLinks([...links(sources, navigation, helpers), ...circuit.links, ...parts.links]);
   return {
     views: views.map((view) => {
       const body = view.source.code.slice(...view.body);
@@ -76,7 +83,7 @@ export function composeViews(sources: KotlinSource[]): ComposeViews {
     links: linked.links,
     placements: pairs,
     starts: startViews(sources, all, rootViews),
-    unresolvedLinks: unresolvedCalls(navigation) + linked.unresolved,
+    unresolvedLinks: unresolvedCalls(navigation) + parts.unresolved + linked.unresolved,
   };
 }
 
@@ -115,10 +122,11 @@ function placements(views: ComposableFunction[]) {
       const name = m[1] ?? "";
       const placed = nearestTo(byName.get(name) ?? [], view.source, (v) => v.source);
       if (!placed || name === view.name) continue;
+      const holder = overloadFor(byName, view);
       const files = placedIn.get(name) ?? new Set<string>();
       files.add(view.source.rel);
       placedIn.set(name, files);
-      pairs.push({ view: refOf(placed), in: refOf(view) });
+      pairs.push({ view: refOf(placed), in: refOf(holder) });
     }
   }
   return { placedIn, pairs };
@@ -131,7 +139,7 @@ const refOf = (view: ComposableFunction): ViewRef => ({
 });
 
 /** One link per pair of views, with its line; links missing a view are counted, not drawn. */
-function viewLinks(found: Link[]): { links: ViewLink[]; unresolved: number } {
+function viewLinks(found: PartLink[]): { links: ViewLink[]; unresolved: number } {
   let unresolved = 0;
   const all = [...groupBy(found, (l) => l.source)].flatMap(([source, list]) => {
     const sorted = [...list].sort((a, b) => a.at - b.at);
