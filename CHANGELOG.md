@@ -7,6 +7,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- React Native text styles, spacing and corner radii: named typography objects with how often the code reaches
+  them, styles written in place (spread named styles included), constants and default exports followed, font file
+  names read as family and weight, and Tailwind's text, spacing and rounded classes at its sizes or a config's.
+
 - React Native colours: theme objects (light and dark paired, aliases followed, one light and one dark theme kept of
   several), Tailwind configs and CSS `@theme` colours with the class names using them, and colours written into
   styles. Their tokens name each colour as the code does, in Figma's web code slot. A React Native app's native code

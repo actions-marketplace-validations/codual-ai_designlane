@@ -1,5 +1,6 @@
 /** A React Native app's JavaScript and TypeScript files, each parsed once by TypeScript's own parser. */
 
+import path from "node:path";
 import ts from "typescript";
 import { isTestPath } from "../scan/test-paths.js";
 import type { ScanContext } from "./plugin.js";
@@ -130,4 +131,75 @@ export function eachNode(root: ts.Node, visit: (node: ts.Node) => boolean): void
     });
     for (let i = children.length - 1; i >= 0; i--) stack.push(children[i] as ts.Node);
   }
+}
+
+/** The name a file's default export is imported by: the file's, or its folder's for an `index` file. */
+export const fileName = (source: JsSource) => {
+  const base = path.basename(source.rel).replace(/\.[^.]+$/, "");
+  const folder = path.dirname(source.rel);
+  return base === "index" && folder !== "." ? path.basename(folder) : base;
+};
+
+/** `export default x` or `module.exports = x`: the `x`. */
+export function defaultExport(statement: ts.Statement): ts.Expression | undefined {
+  if (ts.isExportAssignment(statement)) return statement.expression;
+  if (
+    ts.isExpressionStatement(statement) &&
+    ts.isBinaryExpression(statement.expression) &&
+    statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    renderPath(accessPath(statement.expression.left) ?? []) === "module.exports"
+  ) {
+    return statement.expression.right;
+  }
+  return undefined;
+}
+
+/** The object literal a declaration holds, also through `Object.freeze(…)`; never a style sheet's. */
+export function objectIn(node: ts.Expression): ts.ObjectLiteralExpression | undefined {
+  const value = unwrapped(node);
+  if (ts.isObjectLiteralExpression(value)) return value;
+  if (ts.isCallExpression(value) && renderPath(accessPath(value.expression) ?? []) === "Object.freeze") {
+    const first = value.arguments[0];
+    return first ? objectIn(first) : undefined;
+  }
+  return undefined;
+}
+
+/** Whether a name is a local one where it's read, a parameter or a variable of an enclosing function or block, rather
+ * than the module's constant: `function Button({ brand }) { return brand; }`. */
+export function shadowed(node: ts.Identifier): boolean {
+  for (let at: ts.Node = node.parent; !ts.isSourceFile(at); at = at.parent) {
+    if (ts.isFunctionLike(at) && at.parameters.some((p) => bindingNames(p.name).includes(node.text)))
+      return true;
+    // `for (const brand of list)`, `catch (brand)`.
+    if (
+      (ts.isForOfStatement(at) || ts.isForInStatement(at) || ts.isForStatement(at)) &&
+      at.initializer &&
+      ts.isVariableDeclarationList(at.initializer) &&
+      at.initializer.declarations.some((d) => bindingNames(d.name).includes(node.text))
+    )
+      return true;
+    if (
+      ts.isCatchClause(at) &&
+      at.variableDeclaration &&
+      bindingNames(at.variableDeclaration.name).includes(node.text)
+    )
+      return true;
+    if (ts.isBlock(at) || ts.isCaseClause(at)) {
+      const statements = ts.isBlock(at) ? at.statements : at.statements;
+      for (const s of statements)
+        if (
+          ts.isVariableStatement(s) &&
+          s.declarationList.declarations.some((d) => bindingNames(d.name).includes(node.text))
+        )
+          return true;
+    }
+  }
+  return false;
+}
+
+/** The names a binding declares: `brand`, or each name in `{ brand, tint: [a] }`. */
+export function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((e) => (ts.isOmittedExpression(e) ? [] : bindingNames(e.name)));
 }

@@ -174,22 +174,27 @@ describe("a React Native app", () => {
     expect(scanNotes(scan).join(" ")).toContain("also has SwiftUI code, its native side");
   });
 
-  speedIt("reads thousands of files using a theme of thousands of colours quickly", async () => {
-    const theme = Array.from(
-      { length: 3000 },
-      (_, i) => `c${i}: "#${(i * 4099).toString(16).padStart(6, "0").slice(0, 6)}"`,
-    );
-    const files: Record<string, string> = {
-      "src/theme.ts": `export const themes = { light: { ${theme.join(", ")} }, dark: { ${theme.join(", ")} } };`,
-    };
-    for (let f = 0; f < 2000; f++)
-      files[`src/s${f}.tsx`] =
-        `${RN}export const S${f} = ({ theme }) => <View style={{ backgroundColor: theme.c${f}, color: "#123456" }} />;`;
-    const started = performance.now();
-    const { color } = await app(files);
-    expect(color("c1")?.uses).toBe(1);
-    expect(performance.now() - started).toBeLessThan(10_000);
-  });
+  speedIt(
+    "reads thousands of files using a theme of thousands of colours quickly",
+    async () => {
+      const theme = Array.from(
+        { length: 3000 },
+        (_, i) => `c${i}: "#${(i * 4099).toString(16).padStart(6, "0").slice(0, 6)}"`,
+      );
+      const files: Record<string, string> = {
+        "src/theme.ts": `export const themes = { light: { ${theme.join(", ")} }, dark: { ${theme.join(", ")} } };`,
+      };
+      for (let f = 0; f < 2000; f++)
+        files[`src/s${f}.tsx`] =
+          `${RN}export const S${f} = ({ theme }) => <View style={{ backgroundColor: theme.c${f}, color: "#123456" }} />;`;
+      const started = performance.now();
+      const { color } = await app(files);
+      expect(color("c1")?.uses).toBe(1);
+      expect(performance.now() - started).toBeLessThan(10_000);
+      // Writing thousands of files is slow on Windows; the scan itself has the 10 seconds above.
+    },
+    30_000,
+  );
 
   it("leaves alone a native app beside some React Native code that isn't an app, or outside the app's own folders", async () => {
     const swift =

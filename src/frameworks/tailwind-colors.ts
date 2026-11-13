@@ -34,30 +34,113 @@ const MAX_HOPS = 8;
 export interface TailwindFindings extends ColorFindings {
   /** The configs and the modules they read colours from, whose colours are Tailwind's names, not objects' paths. */
   files: Set<string>;
+  /** The app uses Tailwind: it has a config, or a stylesheet bringing Tailwind in. */
+  used: boolean;
+  /** The families a CSS `@theme` names, by class name: `--font-inter: "Inter"` is `font-inter`. */
+  fonts: Record<string, string>;
+}
+
+/** Where class names are written: a `className`-like prop, or a class helper's arguments (`cn(…)`, `tw\`…\``). */
+const CLASS_PROP = /^(?:className|class|tw|\w+Class(?:Name)?)$/;
+const CLASS_HELPER = /^(?:cn|cx|clsx|classnames|classNames|twMerge|twJoin|tw|cva|tv)$/;
+/** Every string under a node: quoted, or a template's text parts. */
+function stringsIn(node: ts.Node): string[] {
+  const out: string[] = [];
+  eachNode(node, (inner) => {
+    if (
+      ts.isStringLiteral(inner) ||
+      ts.isNoSubstitutionTemplateLiteral(inner) ||
+      ts.isTemplateHead(inner) ||
+      ts.isTemplateMiddle(inner) ||
+      ts.isTemplateTail(inner)
+    )
+      out.push(inner.text);
+    return true;
+  });
+  return out;
+}
+
+/** A word only a class name is: `p-4`, `md:text-lg`, `bg-primary/50`, `flex`. */
+const CLASS_WORD = /^!?-?(?:[\w-]+:)*[a-z][\w-]*(?:-(?:[\w.%]+|\[[^\]\s]+\]))+(?:\/[\w.]+)?!?$/;
+const BARE_CLASS =
+  /^(?:flex|grid|hidden|block|inline|contents|absolute|relative|italic|underline|uppercase|lowercase|capitalize|truncate|grow|shrink|rounded|border|shadow)$/;
+
+/** A string of nothing but class names, at least one with a value (`text-lg`, not just `flex`). */
+export function looksLikeClasses(text: string): boolean {
+  const words = text.trim().split(/\s+/);
+  return (
+    words.some((w) => CLASS_WORD.test(w)) && words.every((w) => CLASS_WORD.test(w) || BARE_CLASS.test(w))
+  );
+}
+
+/** The class names a file writes, one list per place: a `className`-like prop or property, or a class helper's
+ * arguments (`cn("text-lg", isBold && "font-bold")`, `tw\`…\``), with every string in it (quoted, or a template's
+ * text parts). Strings elsewhere (a label, an id) aren't classes, however they read. */
+export function eachClassList(source: JsSource, visit: (node: ts.Node, text: string) => void): void {
+  eachNode(source.file, (node) => {
+    const holds =
+      (ts.isJsxAttribute(node) && CLASS_PROP.test(node.name.getText()) && node.initializer) ||
+      (ts.isPropertyAssignment(node) && CLASS_PROP.test(propertyName(node.name) ?? "")) ||
+      (ts.isCallExpression(node) && CLASS_HELPER.test(accessPath(node.expression)?.at(-1) ?? "")) ||
+      (ts.isTaggedTemplateExpression(node) && CLASS_HELPER.test(accessPath(node.tag)?.at(-1) ?? ""));
+    if (!holds) {
+      // A string held elsewhere reading as nothing but class names (`const heading = "mt-4 text-darkGray"`, a
+      // ternary's branches) is one too; a sentence (`"Corners are rounded and m-2 looks nice"`) isn't.
+      if (
+        (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+        // A prop that isn't for classes (`testID="text-lg"`) holds something else.
+        !ts.isJsxAttribute(node.parent) &&
+        looksLikeClasses(node.text)
+      )
+        visit(node, node.text);
+      return true;
+    }
+    // A ternary's branches are classes one instead of the other, each with the rest of the list.
+    const texts: string[] = [];
+    const branches: ts.Expression[] = [];
+    eachNode(node, (inner) => {
+      if (ts.isConditionalExpression(inner)) {
+        branches.push(inner.whenTrue, inner.whenFalse);
+        return false;
+      }
+      if (
+        ts.isStringLiteral(inner) ||
+        ts.isNoSubstitutionTemplateLiteral(inner) ||
+        ts.isTemplateHead(inner) ||
+        ts.isTemplateMiddle(inner) ||
+        ts.isTemplateTail(inner)
+      )
+        texts.push(inner.text);
+      return true;
+    });
+    const base = texts.join(" ");
+    if (branches.length === 0) visit(node, base);
+    for (const branch of branches) visit(branch, `${base} ${stringsIn(branch).join(" ")}`);
+    return false;
+  });
 }
 
 /** The colours Tailwind names in the project, with the class names using them; empty for an app without Tailwind. */
 export async function tailwindColors(ctx: ScanContext, sources: JsSource[]): Promise<TailwindFindings> {
   const files = new Set<string>();
   const named = [...configColors(sources, files), ...(await cssColors(ctx))];
-  const found: TailwindFindings = { named, references: [], literals: [], system: [], files };
+  const css = await readCss(ctx);
+  const used = files.size > 0 || css.imports;
+  const found: TailwindFindings = {
+    named,
+    references: [],
+    literals: [],
+    system: [],
+    files,
+    used,
+    fonts: css.fonts,
+  };
   if (named.length === 0) return found;
   const names = new Set(named.map((c) => c.name));
   for (const source of sources) {
-    eachNode(source.file, (node) => {
-      // Class names in quotes, or in a template's text parts (`flex ${a} bg-primary`).
-      if (
-        ts.isStringLiteral(node) ||
-        ts.isNoSubstitutionTemplateLiteral(node) ||
-        ts.isTemplateHead(node) ||
-        ts.isTemplateMiddle(node) ||
-        ts.isTemplateTail(node)
-      ) {
-        for (const name of classColors(node.text)) {
-          if (names.has(name)) found.references.push({ name, reference: name });
-        }
-      }
-      return true;
+    eachClassList(source, (_, text) => {
+      for (const name of classColors(text))
+        if (names.has(name)) found.references.push({ name, reference: name });
     });
   }
   return found;
@@ -73,7 +156,7 @@ function classColors(text: string): string[] {
 }
 
 /** A value and the file it's written in, which its names are looked up in. */
-interface Located {
+export interface Located {
   node: ts.Expression;
   source: JsSource;
 }
@@ -81,21 +164,28 @@ interface Located {
 /** The colours `theme.colors` and `theme.extend.colors` name in a Tailwind config, nested names joined by `-`
  * (`charcoal: { 500 }` is `charcoal-500`, `DEFAULT` is the group's own), also from modules the config requires. */
 function configColors(sources: JsSource[], files: Set<string>): NamedColor[] {
-  const resolver = new Resolver(sources);
   const out: NamedColor[] = [];
-  for (const config of sources.filter((s) => TAILWIND_CONFIG.test(s.rel))) {
+  for (const { config, groups, resolver } of themeGroups(sources, "colors")) {
     files.add(config.rel);
-    const root = resolver.exported(config);
-    const theme = root && resolver.member(root, "theme");
-    const extend = theme && resolver.member(theme, "extend");
-    for (const group of [
-      theme && resolver.member(theme, "colors"),
-      extend && resolver.member(extend, "colors"),
-    ]) {
-      if (group) flatten(group, [], resolver, files, out, 0);
-    }
+    for (const group of groups) flatten(group, [], resolver, files, out, 0);
   }
   return out;
+}
+
+/** For each Tailwind config, the values its `theme` and `theme.extend` give `key` (`colors`, `fontSize`). */
+export function themeGroups(sources: JsSource[], key: string) {
+  const resolver = new Resolver(sources);
+  return sources
+    .filter((s) => TAILWIND_CONFIG.test(s.rel))
+    .map((config) => {
+      const root = resolver.exported(config);
+      const theme = root && resolver.member(root, "theme");
+      const extend = theme && resolver.member(theme, "extend");
+      const groups = [theme && resolver.member(theme, key), extend && resolver.member(extend, key)].filter(
+        (g): g is Located => g !== undefined,
+      );
+      return { config, groups, resolver };
+    });
 }
 
 function flatten(
@@ -139,7 +229,7 @@ const stringValue = (node: ts.Expression): string | undefined => {
 };
 
 /** Follows a config's values through module-level variables, `require(…)` and default imports of local modules. */
-class Resolver {
+export class Resolver {
   private readonly byRel: Map<string, JsSource>;
 
   constructor(sources: JsSource[]) {
@@ -220,6 +310,23 @@ class Resolver {
     }
     return undefined;
   }
+}
+
+/** A font family in a CSS `@theme`: `--font-inter: "Inter", sans-serif;`, or v3-style `--font-family-sans`. */
+const CSS_FONT = /--font-(?:family-)?([\w-]+)\s*:\s*([^;]+);/g;
+
+/** Whether a stylesheet brings Tailwind in (`@import "tailwindcss"`, `@tailwind base`), and the families its
+ * `@theme` names. */
+async function readCss(ctx: ScanContext): Promise<{ imports: boolean; fonts: Record<string, string> }> {
+  let imports = false;
+  const fonts: Record<string, string> = {};
+  for (const file of ctx.files.filter((f) => CSS.test(f.rel))) {
+    const text = (await ctx.read(file))?.replace(/\/\*[\s\S]*?\*\//g, "");
+    if (!text) continue;
+    if (/@import\s+["']tailwindcss|@tailwind\s/.test(text)) imports = true;
+    for (const m of text.matchAll(CSS_FONT)) if (m[1] && m[2] && !(m[1] in fonts)) fonts[m[1]] = m[2].trim();
+  }
+  return { imports, fonts };
 }
 
 /** The colours CSS `@theme` blocks name, `--color-*`, with the values a dark block gives them; commented-out

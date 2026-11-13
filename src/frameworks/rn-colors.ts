@@ -9,11 +9,15 @@ import type { ColorFindings, NamedColor } from "../scan/palette.js";
 import { CSS_NAMES, colorOf } from "./css-color.js";
 import {
   accessPath,
+  defaultExport,
   eachNode,
+  fileName,
   type JsSource,
   lineOf,
+  objectIn,
   propertyName,
   renderPath,
+  shadowed,
   unwrapped,
 } from "./js-sources.js";
 import { TAILWIND_CONFIG } from "./tailwind-colors.js";
@@ -167,33 +171,6 @@ class Modules {
     }
     return undefined;
   }
-}
-
-const fileName = (source: JsSource) => path.basename(source.rel).replace(/\.[^.]+$/, "");
-
-/** `export default x` or `module.exports = x`: the `x`. */
-function defaultExport(statement: ts.Statement): ts.Expression | undefined {
-  if (ts.isExportAssignment(statement)) return statement.expression;
-  if (
-    ts.isExpressionStatement(statement) &&
-    ts.isBinaryExpression(statement.expression) &&
-    statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-    renderPath(accessPath(statement.expression.left) ?? []) === "module.exports"
-  ) {
-    return statement.expression.right;
-  }
-  return undefined;
-}
-
-/** The object literal a declaration holds, also through `Object.freeze(…)`; never a style sheet's. */
-function objectIn(node: ts.Expression): ts.ObjectLiteralExpression | undefined {
-  const value = unwrapped(node);
-  if (ts.isObjectLiteralExpression(value)) return value;
-  if (ts.isCallExpression(value) && renderPath(accessPath(value.expression) ?? []) === "Object.freeze") {
-    const first = value.arguments[0];
-    return first ? objectIn(first) : undefined;
-  }
-  return undefined;
 }
 
 const stringValue = (node: ts.Expression): string | undefined => {
@@ -611,45 +588,6 @@ function isConstantUse(node: ts.Identifier, source: JsSource, known: Known): boo
     importedNames.set(source, names);
   }
   return names.has(node.text);
-}
-
-/** Whether a name is a local one where it's read, a parameter or a variable of an enclosing function or block, rather
- * than the module's constant: `function Button({ brand }) { return brand; }`. */
-function shadowed(node: ts.Identifier): boolean {
-  for (let at: ts.Node = node.parent; !ts.isSourceFile(at); at = at.parent) {
-    if (ts.isFunctionLike(at) && at.parameters.some((p) => bindingNames(p.name).includes(node.text)))
-      return true;
-    // `for (const brand of list)`, `catch (brand)`.
-    if (
-      (ts.isForOfStatement(at) || ts.isForInStatement(at) || ts.isForStatement(at)) &&
-      at.initializer &&
-      ts.isVariableDeclarationList(at.initializer) &&
-      at.initializer.declarations.some((d) => bindingNames(d.name).includes(node.text))
-    )
-      return true;
-    if (
-      ts.isCatchClause(at) &&
-      at.variableDeclaration &&
-      bindingNames(at.variableDeclaration.name).includes(node.text)
-    )
-      return true;
-    if (ts.isBlock(at) || ts.isCaseClause(at)) {
-      const statements = ts.isBlock(at) ? at.statements : at.statements;
-      for (const s of statements)
-        if (
-          ts.isVariableStatement(s) &&
-          s.declarationList.declarations.some((d) => bindingNames(d.name).includes(node.text))
-        )
-          return true;
-    }
-  }
-  return false;
-}
-
-/** The names a binding declares: `brand`, or each name in `{ brand, tint: [a] }`. */
-function bindingNames(name: ts.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text];
-  return name.elements.flatMap((e) => (ts.isOmittedExpression(e) ? [] : bindingNames(e.name)));
 }
 
 /** A module-level constant's own value, `const brand = "#3366e6" as const`, already a named colour. */

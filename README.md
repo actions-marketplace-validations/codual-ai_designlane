@@ -25,8 +25,10 @@ and Circuit. It doesn't yet read Compose tab switches, or spacing the code names
 
 React Native support has started with colours: those an app's theme objects name (a `light` and a `dark` theme paired
 into one colour, a theme's colours reached through another's), Tailwind's (a `tailwind.config.js`, or a CSS
-`@theme`, as NativeWind and Uniwind use), and colours written straight into styles. Its text styles, spacing and
-screens come next. A React Native app's SwiftUI or Compose code (a widget, an extension) is left out, as its native
+`@theme`, as NativeWind and Uniwind use), and colours written straight into styles. It reads text styles too: those
+a typography object names, and those written in place in style sheets and `style` props (a font file's name like
+`Inter-SemiBold` read as its family and weight, a size scaled to the phone's settings read at the size written), with
+Tailwind's text classes; and the spacing and corner radii styles and Tailwind classes set. Its screens come next. A React Native app's SwiftUI or Compose code (a widget, an extension) is left out, as its native
 side.
 
 A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a
