@@ -7,6 +7,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- React Native screens: components React Navigation's screens show (`component`, `getComponent`, a children
+  function, static `screens`, an app's own stack creators, through requires and imports), Expo Router's route files
+  (layouts as containers), a modal's whole content, and the shared classifier's signs (lists, scrolling, safe areas).
+
 - React Native text styles, spacing and corner radii: named typography objects with how often the code reaches
   them, styles written in place (spread named styles included), constants and default exports followed, font file
   names read as family and weight, and Tailwind's text, spacing and rounded classes at its sizes or a config's.
