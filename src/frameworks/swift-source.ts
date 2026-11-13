@@ -125,6 +125,38 @@ export interface StructDecl {
 }
 
 const STRUCT = /\bstruct\s+([A-Za-z_]\w*)/g;
+const CLASS = /\b(?:class|actor)\s+([A-Z]\w*)/g;
+
+const TYPE_DECLARATION = /\b(?:struct|extension|class|enum|actor)\s+(?:[A-Z]\w*\.)*([A-Z]\w*)/g;
+
+export interface ClassDecl {
+  name: string;
+  open: number;
+  close: number;
+  /** The type it's declared in, or extends (`AView` for `extension AView { class ViewModel {} }`). */
+  outer?: string;
+}
+
+/** The classes and actors declared in `code` (blanked), with their bodies' braces: a view model's, say. */
+export function classes(code: string): ClassDecl[] {
+  const { nextOpen, closeOf } = braceIndex(code);
+  const bodyOf = (m: RegExpMatchArray) => {
+    const after = (m.index ?? 0) + m[0].length;
+    const open = nextOpen[after] ?? -1;
+    if (open === -1 || open - after > MAX_HEADER || /[;=()]/.test(code.slice(after, open))) return undefined;
+    return { name: m[1] ?? "", open, close: closeOf.get(open) ?? code.length - 1 };
+  };
+  const types = [...code.matchAll(TYPE_DECLARATION)].flatMap((m) => {
+    const body = bodyOf(m);
+    return body ? [body] : [];
+  });
+  return [...code.matchAll(CLASS)].flatMap((m) => {
+    const body = bodyOf(m);
+    if (!body) return [];
+    const outer = types.findLast((t) => t.open < body.open && body.close < t.close);
+    return [{ ...body, ...(outer && { outer: outer.name }) }];
+  });
+}
 
 /** Every struct declaration in blanked code (see `codeOnly`), with its conformances and body. Linear in the file size. */
 export function structs(code: string): StructDecl[] {
@@ -186,12 +218,31 @@ export type Owner =
   | { kind: "conditional" }
   | { kind: "labelled"; label: string };
 
+/** The code before `end`, with each argument list emptied (`if let s = list.first(where: { $0.on }) {` reads as
+ * `if let s = list.first() {`), so a closure inside one doesn't hide the statement it's in. */
+function withoutArguments(code: string, tree: BracketTree, end: number): string {
+  const parts: string[] = [];
+  let j = end;
+  const stop = Math.max(0, end - HEADER_CHARS);
+  while (j > stop) {
+    const open = code[j - 1] === ")" ? tree.openOf.get(j - 1) : undefined;
+    if (open !== undefined && open >= stop) {
+      parts.push("()");
+      j = open;
+    } else {
+      parts.push(code[j - 1] ?? "");
+      j--;
+    }
+  }
+  return parts.reverse().join("");
+}
+
 /** What a bracket belongs to: a call (`sheet`, `NavigationStack`), a function or property, a switch, an `if`, or a
  * labelled closure (`label: {`). */
 export function ownerOf(code: string, tree: BracketTree, open: number): Owner {
   const end = skipSpaceBack(code, open);
   if (code[open] === "{") {
-    const header = code.slice(Math.max(0, end - HEADER_CHARS), end);
+    const header = withoutArguments(code, tree, end);
     if (/\bswitch\b[^{}]*$/.test(header)) return { kind: "switch" };
     // Not `#if`, a compiler directive rather than a block.
     if (/(?<![#\w])(?:if|else|guard)\b[^{}]*$/.test(header)) return { kind: "conditional" };

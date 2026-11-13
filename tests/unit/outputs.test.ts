@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { scanRepo, toDesignMd, toDesignTokens, writeOutputs } from "../../src/index.js";
+import { linkNotes } from "../../src/output/screen-links.js";
 import { colorValue } from "../../src/output/tokens-json.js";
 import type { ColorToken, DesignTokens, ScanResult, TypeStyle } from "../../src/scan/types.js";
 import { tempDir } from "../helpers/temp.js";
@@ -326,5 +327,18 @@ describe("writing", () => {
     expect(await readFile(design, "utf8")).toBe(toDesignMd(scan));
     const elsewhere = path.join(await tempDir({}), "out");
     expect((await writeOutputs(scan, elsewhere)).design).toBe(path.join(elsewhere, "DESIGN.md"));
+  });
+});
+
+describe("notes about links", () => {
+  it("says when a framework's links aren't read", () => {
+    const framework = {
+      framework: "swiftui" as const,
+      platforms: ["ios" as const],
+      screens: [],
+      tokens: { colors: [], systemColors: [], typeStyles: [], fonts: [], spacing: [], radii: [] },
+    };
+    expect(linkNotes([framework])).toEqual(["Links between screens aren't read for SwiftUI yet."]);
+    expect(linkNotes([{ ...framework, links: [] }])).toEqual([]);
   });
 });

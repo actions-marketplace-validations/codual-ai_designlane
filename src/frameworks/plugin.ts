@@ -29,6 +29,12 @@ export interface ViewLink {
   line: number;
 }
 
+/** One view placed inside another, so a link made from a part of a screen (a row) can be credited to the screen. */
+export interface ViewPlacement {
+  view: ViewRef;
+  in: ViewRef;
+}
+
 /** What a plugin found in one framework's code. */
 export interface FrameworkFindings {
   views: ViewFacts[];
@@ -39,6 +45,8 @@ export interface FrameworkFindings {
   links?: ViewLink[];
   /** The views the app's navigation starts on. */
   starts?: ViewRef[];
+  /** Which views are placed inside which, for crediting links made from a part of a screen to the screen. */
+  placements?: ViewPlacement[];
   /** Navigation that couldn't be tied to two views. */
   unresolvedLinks?: number;
   /** Theme objects the code reads its design from that are defined outside the project, in a library. */

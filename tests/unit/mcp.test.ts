@@ -119,9 +119,15 @@ describe("MCP server", () => {
     expect((await call(client, "get_screen_links", { query: "settings" })).text).toBe(
       "No links between screens found. The app starts on Inbox.",
     );
-    const swift = await call(await connect(await tempDir(APP)), "get_screen_links");
-    expect(swift.text).toBe(
-      "No links between screens found. Links between screens aren't read for SwiftUI yet.",
+    const swift = await tempDir({
+      "App/Home.swift": [
+        "import SwiftUI",
+        "struct Home: View { var body: some View { NavigationStack { Text(t).sheet(isPresented: $s) { Settings() } } } }",
+        "struct Settings: View { var body: some View { Text(t) } }",
+      ].join("\n"),
+    });
+    expect((await call(await connect(swift), "get_screen_links")).text).toBe(
+      "1 link:\n- Home → Settings (sheet) App/Home.swift:2",
     );
   });
 

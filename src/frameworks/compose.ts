@@ -11,12 +11,13 @@ export const compose: FrameworkPlugin = {
   async scan(ctx) {
     const sources = await kotlinSources(ctx);
     if (!sources.some((s) => s.compose)) return undefined;
-    const { views, links, starts, unresolvedLinks } = composeViews(sources);
+    const { views, links, starts, placements, unresolvedLinks } = composeViews(sources);
     const unread = navigationNotRead(sources);
     return {
       views,
       links,
       starts,
+      placements,
       unresolvedLinks,
       tokens: await composeTokens(ctx, sources),
       themesOutside: themesOutside(sources),

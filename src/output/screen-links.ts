@@ -37,6 +37,7 @@ export function linkNotes(frameworks: FrameworkScan[]): string[] {
     return starts.map((id) => nameOf.get(id) ?? id);
   });
   const unresolved = frameworks.reduce((sum, f) => sum + (f.unresolvedLinks ?? 0), 0);
+  // Both frameworks read links today; the next one (React Native) may not at first.
   const unread = frameworks.filter((f) => !f.links).map((f) => FRAMEWORK_NAMES[f.framework]);
   return [
     starts.length ? `The app starts on ${[...new Set(starts)].join(", ")}.` : "",

@@ -13,8 +13,9 @@ import {
 import { type Link, links, samePath, unresolvedCalls } from "./compose-links.js";
 import { type Destination, destinations, startRoutes } from "./compose-navigation.js";
 import { type KotlinSource, nearestTo, treeOf } from "./kotlin-sources.js";
-import type { ViewLink, ViewRef } from "./plugin.js";
+import type { ViewLink, ViewPlacement, ViewRef } from "./plugin.js";
 import { lineNumbers } from "./source-text.js";
+import { distinctLinks } from "./view-links.js";
 
 /** Things inside a view's own body that make it look like a whole page: app bars, lists, scrolling, tabs. */
 const PAGE_ELEMENTS = [
@@ -43,6 +44,7 @@ export interface ComposeViews {
   views: ViewFacts[];
   links: ViewLink[];
   starts: ViewRef[];
+  placements: ViewPlacement[];
   unresolvedLinks: number;
 }
 
@@ -54,7 +56,7 @@ export function composeViews(sources: KotlinSource[]): ComposeViews {
   const rootViews = roots(sources, views);
   const presented = new Set(rootViews);
   for (const d of all) if (d.view) presented.add(d.view);
-  const placedIn = placements(views);
+  const { placedIn, pairs } = placements(views);
   const linked = viewLinks([...links(sources, navigation), ...circuit.links]);
   return {
     views: views.map((view) => {
@@ -72,6 +74,7 @@ export function composeViews(sources: KotlinSource[]): ComposeViews {
       };
     }),
     links: linked.links,
+    placements: pairs,
     starts: startViews(sources, all, rootViews),
     unresolvedLinks: unresolvedCalls(navigation) + linked.unresolved,
   };
@@ -102,20 +105,23 @@ function roots(sources: KotlinSource[], views: ComposableFunction[]): Composable
   );
 }
 
-/** For each view's name, the files whose views place it inside themselves. */
-function placements(views: ComposableFunction[]): Map<string, Set<string>> {
-  const names = new Set(views.map((v) => v.name));
+/** For each view's name, the files whose views place it inside themselves; and which view sits inside which. */
+function placements(views: ComposableFunction[]) {
+  const byName = viewsByName(views);
   const placedIn = new Map<string, Set<string>>();
+  const pairs: ViewPlacement[] = [];
   for (const view of views) {
     for (const m of view.source.code.slice(...view.body).matchAll(CALL)) {
       const name = m[1] ?? "";
-      if (!names.has(name) || name === view.name) continue;
+      const placed = nearestTo(byName.get(name) ?? [], view.source, (v) => v.source);
+      if (!placed || name === view.name) continue;
       const files = placedIn.get(name) ?? new Set<string>();
       files.add(view.source.rel);
       placedIn.set(name, files);
+      pairs.push({ view: refOf(placed), in: refOf(view) });
     }
   }
-  return placedIn;
+  return { placedIn, pairs };
 }
 
 const refOf = (view: ComposableFunction): ViewRef => ({
@@ -126,7 +132,6 @@ const refOf = (view: ComposableFunction): ViewRef => ({
 
 /** One link per pair of views, with its line; links missing a view are counted, not drawn. */
 function viewLinks(found: Link[]): { links: ViewLink[]; unresolved: number } {
-  const seen = new Set<string>();
   let unresolved = 0;
   const all = [...groupBy(found, (l) => l.source)].flatMap(([source, list]) => {
     const sorted = [...list].sort((a, b) => a.at - b.at);
@@ -140,12 +145,9 @@ function viewLinks(found: Link[]): { links: ViewLink[]; unresolved: number } {
         return [];
       }
       const [from, to] = [refOf(link.from.view), refOf(link.to.view)];
-      // Two navigation setups can lead to the same pair of views.
-      const pair = `${from.file}#${from.name}@${from.line}>${to.file}#${to.name}@${to.line}`;
-      if (seen.has(pair)) return [];
-      seen.add(pair);
       return [{ from, to, opening: link.opening, file: source.rel, line: lines[i] ?? 1 }];
     });
   });
-  return { links: all, unresolved };
+  // Two navigation setups (phone and TV, say) can lead to the same pair of views.
+  return { links: distinctLinks(all), unresolved };
 }

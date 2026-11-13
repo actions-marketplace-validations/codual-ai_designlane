@@ -53,6 +53,8 @@ export interface ScreenLink {
   /** Where the code opens it. */
   file: string;
   line: number;
+  /** The part of the `from` screen (a row, a toolbar) whose code opens it, by id, when it isn't the screen itself. */
+  via?: string;
 }
 
 export interface ColorToken {

@@ -4,6 +4,7 @@
  * larger view. `swiftui-usage.ts` walks out through a view's brackets and asks this file about each one.
  */
 
+import type { Opening } from "../scan/types.js";
 import { type BracketTree, identifierBefore, skipSpaceBack } from "./source-text.js";
 import { type CallOwner, HEADER_CHARS, type Owner, ownerOf } from "./swift-source.js";
 
@@ -106,7 +107,7 @@ const RULES: { means: Step; when: (b: Bracket) => boolean }[] = [
     when: (b) =>
       b.owner.kind === "labelled" &&
       CONTENT_LABELS.has(b.owner.label) &&
-      labelledContentOpensPage(b.code, b.tree, b.open),
+      labelledContentPresenter(b.code, b.tree, b.open) !== undefined,
   },
   // any other labelled closure, such as a link's `label: { … }`
   { means: "stops", when: (b) => b.owner.kind === "labelled" },
@@ -128,30 +129,65 @@ export function stepThrough(code: string, tree: BracketTree, app: AppViews, open
   return RULES.find((rule) => rule.when(bracket))?.means ?? "stops";
 }
 
+/** The presenter of a bracket that `stepThrough` says presents: `sheet`, `NavigationLink`, `Tab`, `WindowGroup`, an
+ * app's `appSheet`, or `NavigationSplitView` for its columns. */
+export function presenterOf(code: string, tree: BracketTree, open: number): string {
+  if (code[open] === "(") return identifierBefore(code, open);
+  const owner = ownerOf(code, tree, open);
+  if (owner.kind === "call") return owner.name;
+  return labelledContentPresenter(code, tree, open) ?? "";
+}
+
 const looksThrough = (name: string, app: AppViews) =>
   TRANSPARENT.has(name) || app.containers.has(name) || isWrapper(name, app.views);
 
-/** The labelled closure at `open` holds a presenter's content: an argument (`.sheet(item: $x, content: { … })`) or
- * a trailing closure after the presenter's first one (`NavigationSplitView { … } detail: { … }`). */
-function labelledContentOpensPage(code: string, tree: BracketTree, open: number): boolean {
+/** The presenter whose content the labelled closure at `open` holds: an argument's (`.sheet(item: $x, content: { … })`)
+ * or a trailing closure's after the presenter's first one (`NavigationSplitView { … } detail: { … }`); or undefined. */
+function labelledContentPresenter(code: string, tree: BracketTree, open: number): string | undefined {
   const parent = tree.enclosing[open] ?? -1;
-  if (parent !== -1 && code[parent] === "(") return presents(identifierBefore(code, parent));
+  if (parent !== -1 && code[parent] === "(") {
+    const name = identifierBefore(code, parent);
+    return presents(name) ? name : undefined;
+  }
   // Step back over earlier labelled closures (`content: { … }`) to the call that owns the first one.
   let closure = open;
   for (let n = 0; n < MAX_TRAILING_CLOSURES; n++) {
     const colon = skipSpaceBack(code, closure) - 1;
     const beforeLabel = skipSpaceBack(code, colon - identifierBefore(code, colon).length);
     const previous = tree.openOf.get(beforeLabel - 1);
-    if (previous === undefined || code[previous] !== "{") return false;
+    if (previous === undefined || code[previous] !== "{") return undefined;
     const owner = ownerOf(code, tree, previous);
-    if (owner.kind === "call") return presents(owner.name);
-    if (owner.kind !== "labelled") return false;
+    if (owner.kind === "call") return presents(owner.name) ? owner.name : undefined;
+    if (owner.kind !== "labelled") return undefined;
     closure = previous;
   }
-  return false;
+  return undefined;
 }
 
 const presents = (name: string) => PRESENTING_CLOSURES.has(name) || PRESENTING_HELPER.test(name);
+
+/** How each presenter shows the page it opens (`router` and `tabRouter` are switches routing between pages). */
+const OPENINGS: Record<string, Opening> = {
+  sheet: "sheet",
+  fullScreenCover: "fullScreen",
+  popover: "popover",
+  navigationDestination: "push",
+  NavigationLink: "push",
+  router: "push",
+  Tab: "tab",
+  tabItem: "tab",
+  tabRouter: "tab",
+  NavigationSplitView: "pane",
+};
+
+/** How a presenter shows its page, or undefined for one that isn't a page opened from another (a window, a widget's
+ * configuration) or isn't known. */
+export function openingOf(presenter: string): Opening | undefined {
+  const known = OPENINGS[presenter];
+  if (known) return known;
+  if (!PRESENTING_HELPER.test(presenter)) return undefined;
+  return presenter.endsWith("Sheet") ? "sheet" : "fullScreen";
+}
 
 /** An app-specific container such as a store or theme provider: a type that is neither layout nor one of the
  * app's views. Lowercase names are modifiers or functions, which don't wrap. */
