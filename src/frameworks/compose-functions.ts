@@ -72,15 +72,19 @@ export function bodyAfter(source: KotlinSource, from: number): [number, number] 
     const close = closeOf.get(at);
     return close === undefined ? undefined : [at, close];
   }
-  const newline = code.indexOf("\n", at);
+  // The expression may start on the next line (`fun navigateToSearch() =⏎ navigate(SearchRoute)`); it's found in the
+  // code as written, where a string (`= "Hello"`) isn't blank.
+  const skip = source.written.slice(at + 1, at + 1 + MAX_EXPRESSION_GAP).search(/\S/);
+  const starts = skip === -1 ? at : at + 1 + skip;
+  const newline = code.indexOf("\n", starts);
   const lineEnd = newline === -1 ? code.length : newline;
-  const open = code.indexOf("(", at);
-  let end = open !== -1 && open < lineEnd ? (closeOf.get(open) ?? lineEnd) : lineEnd;
-  const gap = code.slice(end + 1, end + 1 + MAX_RETURN_TYPE).search(/\S/);
-  const brace = gap === -1 ? -1 : end + 1 + gap;
-  if (code[brace] === "{") end = closeOf.get(brace) ?? end;
-  return [at, end];
+  const open = code.indexOf("(", starts);
+  const end = open !== -1 && open < lineEnd ? (closeOf.get(open) ?? lineEnd) : lineEnd;
+  return [at, pastTrailingBlock(code, end, closeOf)];
 }
+
+/** How far after `=` a function's expression body may start. */
+const MAX_EXPRESSION_GAP = 200;
 
 /** A capitalised name being called, `Name(` or `Name {`: possibly another view placed inside this one. */
 export const CALL = /(?<![\w.])([A-Z]\w*)\s*[({]/g;
@@ -90,17 +94,46 @@ export const viewsByName = (views: ComposableFunction[]) => groupBy(views, (v) =
 /** A composable that runs a side effect and draws nothing, `NewIntentEffect`, by Compose's naming. */
 const EFFECT = /Effects?$/;
 
-/** The first of the app's views called in `spans`, passing over wrappers (themes) and effects. */
-export function firstViewIn(
+/** A view a destination draws, and the span of its call: what navigation inside that call is made from. */
+export interface DrawnView {
+  view: ComposableFunction;
+  /** From the view's name to the end of its call, past a trailing block. */
+  call: [number, number];
+  /** Its call's `(` or `{`. */
+  open: number;
+}
+
+/** The views drawn in `spans`, in order, side by side or in turn (`if (scientific) ScientificTuner(…) else Tuner(…)`):
+ * the app's own views, passing over wrappers (themes) and effects, but not views called inside another's call. */
+export function viewsIn(
   source: KotlinSource,
   spans: [number, number][],
   byName: Map<string, ComposableFunction[]>,
-): ComposableFunction | undefined {
+): DrawnView[] {
+  const { closeOf } = treeOf(source);
+  const drawn: DrawnView[] = [];
+  let coveredUntil = -1;
   for (const [start, end] of spans) {
     for (const m of source.code.slice(start, end).matchAll(CALL)) {
+      const at = start + (m.index ?? 0);
+      if (at < coveredUntil) continue;
       const view = nearestTo(byName.get(m[1] ?? "") ?? [], source, (v) => v.source);
-      if (view && !view.holdsViews && !EFFECT.test(view.name)) return view;
+      if (!view || view.holdsViews || EFFECT.test(view.name)) continue;
+      const open = at + m[0].length - 1;
+      const close = closeOf.get(open) ?? open;
+      coveredUntil = source.code[open] === "{" ? close : pastTrailingBlock(source.code, close, closeOf);
+      drawn.push({ view, call: [at, coveredUntil], open });
     }
   }
-  return undefined;
+  return drawn;
+}
+
+/** How much space may sit between a call's `)` and its trailing block. */
+const MAX_TRAILING_GAP = 200;
+
+/** Where a call closed at `close` ends: past its trailing block, `Tuner(onClick = { … }) { … }`, if it has one. */
+function pastTrailingBlock(code: string, close: number, closeOf: Map<number, number>): number {
+  const gap = code.slice(close + 1, close + 1 + MAX_TRAILING_GAP).search(/\S/);
+  const brace = gap === -1 ? -1 : close + 1 + gap;
+  return code[brace] === "{" ? (closeOf.get(brace) ?? close) : close;
 }

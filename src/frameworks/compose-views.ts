@@ -7,11 +7,11 @@ import {
   CALL,
   type ComposableFunction,
   composableFunctions,
-  firstViewIn,
   viewsByName,
+  viewsIn,
 } from "./compose-functions.js";
 import { type Link, links, samePath, unresolvedCalls } from "./compose-links.js";
-import { type Destination, destinations, startRoutes } from "./compose-navigation.js";
+import { type Destination, destinations, drawnBy, startRoutes } from "./compose-navigation.js";
 import { type KotlinSource, nearestTo, treeOf } from "./kotlin-sources.js";
 import type { ViewLink, ViewPlacement, ViewRef } from "./plugin.js";
 import { lineNumbers } from "./source-text.js";
@@ -55,7 +55,7 @@ export function composeViews(sources: KotlinSource[]): ComposeViews {
   const all = [...navigation, ...circuit.destinations];
   const rootViews = roots(sources, views);
   const presented = new Set(rootViews);
-  for (const d of all) if (d.view) presented.add(d.view);
+  for (const d of all) for (const view of drawnBy(d)) presented.add(view);
   const { placedIn, pairs } = placements(views);
   const linked = viewLinks([...links(sources, navigation), ...circuit.links]);
   return {
@@ -85,8 +85,8 @@ function startViews(sources: KotlinSource[], all: Destination[], rootViews: Comp
   const byKey = groupBy(all, (d) => d.key);
   const fromNavigation = startRoutes(sources).flatMap(({ key, path, source }) => {
     const candidates = (byKey.get(key) ?? []).filter((d) => samePath(path, d.path));
-    const view = nearestTo(candidates, source, (d) => d.source)?.view;
-    return view ? [view] : [];
+    const start = nearestTo(candidates, source, (d) => d.source);
+    return start ? drawnBy(start) : [];
   });
   const starts = fromNavigation.length ? fromNavigation : rootViews;
   return [...new Set(starts)].map(refOf);
@@ -99,7 +99,7 @@ function roots(sources: KotlinSource[], views: ComposableFunction[]): Composable
     [...source.code.matchAll(ROOT)].flatMap((m) => {
       const open = (m.index ?? 0) + m[0].length - 1;
       const close = treeOf(source).closeOf.get(open);
-      const view = close === undefined ? undefined : firstViewIn(source, [[open, close]], byName);
+      const view = close === undefined ? undefined : viewsIn(source, [[open, close]], byName)[0]?.view;
       return view ? [view] : [];
     }),
   );
@@ -140,12 +140,19 @@ function viewLinks(found: Link[]): { links: ViewLink[]; unresolved: number } {
       sorted.map((l) => l.at),
     );
     return sorted.flatMap((link, i) => {
-      if (!link.from.view || !link.to.view) {
+      const from = link.fromView;
+      const to = drawnBy(link.to);
+      if (!from || to.length === 0) {
         unresolved++;
         return [];
       }
-      const [from, to] = [refOf(link.from.view), refOf(link.to.view)];
-      return [{ from, to, opening: link.opening, file: source.rel, line: lines[i] ?? 1 }];
+      return to.map((view) => ({
+        from: refOf(from),
+        to: refOf(view),
+        opening: link.opening,
+        file: source.rel,
+        line: lines[i] ?? 1,
+      }));
     });
   });
   // Two navigation setups (phone and TV, say) can lead to the same pair of views.

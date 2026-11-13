@@ -68,7 +68,15 @@ export function circuitScreens(
         const target = callArguments(source, open).args[0]?.value.match(/^[A-Za-z_][\w.]*/)?.[0];
         const to = target ? byKey.get(target.split(".").at(-1) ?? "") : undefined;
         // A presenter opening its own screen again (a related show's details) is a real link.
-        if (to) links.push({ from, to, opening: OPENED_BY[m[1] ?? ""] ?? "push", source, at: open });
+        if (to)
+          links.push({
+            from,
+            fromView: from.view,
+            to,
+            opening: OPENED_BY[m[1] ?? ""] ?? "push",
+            source,
+            at: open,
+          });
       }
     }
   }

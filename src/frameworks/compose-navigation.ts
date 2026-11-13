@@ -2,7 +2,7 @@
 
 import { groupBy } from "../scan/counting.js";
 import type { Opening } from "../scan/types.js";
-import { type ComposableFunction, firstViewIn, viewsByName } from "./compose-functions.js";
+import { type ComposableFunction, type DrawnView, viewsByName, viewsIn } from "./compose-functions.js";
 import { type Argument, callArguments, isDeclared } from "./kotlin-calls.js";
 import { type KotlinSource, treeOf } from "./kotlin-sources.js";
 
@@ -25,8 +25,38 @@ export interface Destination {
   listPane?: true;
   /** Where it's declared; Circuit screens are classes, without a block of their own. */
   declared?: Declaration;
+  /** The view it draws first; Circuit screens set only this. */
   view?: ComposableFunction;
+  /** Every view its block draws, in order, side by side (a pager's pages) or one instead of another. */
+  drawn?: DrawnView[];
 }
+
+/** The views navigating to a destination may show: the first it draws, and those drawn instead of it
+ * (`if (scientific) ScientificTuner(…) else Tuner(…)`). */
+export const drawnBy = (d: Destination): ComposableFunction[] =>
+  remembered(shown, d, () =>
+    d.drawn ? unique(oneOrAnother(d.source.code, d.drawn)) : d.view ? [d.view] : [],
+  );
+
+/** Every view a destination draws, each making the links in its own call and body. */
+export const drawingViews = (d: Destination): ComposableFunction[] =>
+  remembered(drawing, d, () => (d.drawn ? unique(d.drawn) : d.view ? [d.view] : []));
+
+const shown = new WeakMap<Destination, ComposableFunction[]>();
+const drawing = new WeakMap<Destination, ComposableFunction[]>();
+function remembered(
+  cache: WeakMap<Destination, ComposableFunction[]>,
+  d: Destination,
+  work: () => ComposableFunction[],
+) {
+  const known = cache.get(d);
+  if (known) return known;
+  const views = work();
+  cache.set(d, views);
+  return views;
+}
+
+const unique = (drawn: DrawnView[]) => [...new Set(drawn.map((a) => a.view))];
 
 /** How long a route type between `<` and `>` may be. */
 const MAX_TYPE_ARGUMENT = 120;
@@ -70,10 +100,30 @@ export function destinations(sources: KotlinSource[], views: ComposableFunction[
   );
   cutNested(found);
   for (const d of found) {
-    const view = d.declared && firstViewIn(d.source, d.declared.own, byName);
-    if (view) d.view = view;
+    const drawn = d.declared ? viewsIn(d.source, d.declared.own, byName) : [];
+    const first = drawn[0];
+    if (first) {
+      d.view = first.view;
+      d.drawn = drawn;
+    }
   }
   return found;
+}
+
+/** All that may sit between one branch's view and the next: `} else {`, `else if (…)`, or a `when` case's
+ * `Mode.Scientific ->`; not a statement, a lambda's `item ->` or an `if` expression's `else`. */
+const NEXT_BRANCH = /^[\s}]*(?:else(?:\s+if\s*\([^{};]*\))?|[^{};=]*->)\s*\{?\s*$/;
+
+/** The first view drawn and those drawn instead of it (`if (a) A() else B()`, `when` cases); not views drawn beside
+ * it (`Home(); if (show) FilterSheet()`). */
+function oneOrAnother(code: string, drawn: DrawnView[]): DrawnView[] {
+  const chosen = drawn.slice(0, 1);
+  for (const next of drawn.slice(1)) {
+    const previous = chosen.at(-1);
+    if (!previous || !NEXT_BRANCH.test(code.slice(previous.call[1] + 1, next.call[0]))) break;
+    chosen.push(next);
+  }
+  return chosen;
 }
 
 /** The type a `when` branch matches just before `at`: `TopicKey` in `is TopicKey -> NavEntry(key) {`. */

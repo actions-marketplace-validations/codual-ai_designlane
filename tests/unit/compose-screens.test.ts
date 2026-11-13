@@ -363,6 +363,210 @@ describe("navigation written through an app's own state class", () => {
   });
 });
 
+describe("navigation laid out the way Google recommends for feature modules", () => {
+  const host = (calls: string) =>
+    `@Composable fun AppNavHost(navController: NavHostController) {\n  NavHost(navController, startDestination = ForYouRoute) {\n${calls}\n  }\n}`;
+
+  it("credits a feature's screen to its graph function, past a one-line helper declared before it", async () => {
+    const { links } = await app({
+      "feature/Views.kt": plain("ForYouScreen") + plain("TopicScreen"),
+      "feature/Navigation.kt": [
+        "fun NavController.navigateToForYou(navOptions: NavOptions) = navigate(route = ForYouRoute, navOptions)",
+        "fun NavGraphBuilder.forYouSection(onTopicClick: (String) -> Unit) {",
+        "  composable<ForYouRoute> { ForYouScreen(onTopicClick) }",
+        "}",
+        "fun NavController.navigateToTopic(id: String) { navigate(route = TopicRoute(id)) }",
+        "fun NavGraphBuilder.topicScreen() { composable<TopicRoute> { TopicScreen() } }",
+      ].join("\n"),
+      "app/NavHost.kt": host(
+        "    forYouSection(onTopicClick = navController::navigateToTopic)\n    topicScreen()",
+      ),
+    });
+    expect(links).toEqual(["ForYouScreen -> TopicScreen (push)"]);
+  });
+
+  it("reads a helper whose body starts on the line after `=`", async () => {
+    const { links } = await app({
+      "feature/Views.kt": plain("ForYouScreen") + plain("SearchScreen"),
+      "feature/Navigation.kt": [
+        "fun NavController.navigateToSearch(navOptions: NavOptions? = null) =",
+        "    navigate(SearchRoute, navOptions)",
+        "fun NavGraphBuilder.forYouSection(onSearchClick: () -> Unit) {",
+        "  composable<ForYouRoute> { ForYouScreen(onOpen = onSearchClick) }",
+        "}",
+        "fun NavGraphBuilder.searchScreen() { composable<SearchRoute> { SearchScreen() } }",
+      ].join("\n"),
+      "app/NavHost.kt": host(
+        "    forYouSection(onSearchClick = navController::navigateToSearch)\n    searchScreen()",
+      ),
+    });
+    expect(links).toEqual(["ForYouScreen -> SearchScreen (push)"]);
+  });
+
+  it("doesn't read the next line as the body of a one-line function returning a string", async () => {
+    const { links } = await app({
+      "feature/Views.kt": plain("ForYouScreen") + plain("SettingsScreen"),
+      "feature/Navigation.kt": [
+        'fun title() = "Hello"',
+        "val opened = navController.navigate(SettingsRoute)",
+        "fun NavGraphBuilder.forYouSection() { composable<ForYouRoute> { ForYouScreen(onOpen = { title() }) } }",
+        "fun NavGraphBuilder.settingsScreen() { composable<SettingsRoute> { SettingsScreen() } }",
+      ].join("\n"),
+      "app/NavHost.kt": host("    forYouSection()\n    settingsScreen()"),
+    });
+    expect(links).toEqual([]);
+  });
+});
+
+describe("a destination drawing one screen or another", () => {
+  const views =
+    plain("SimpleTuner") +
+    plain("ScientificTuner") +
+    plain("Settings") +
+    plain("Instruments") +
+    plain("Header");
+  const nav = (tuner: string) =>
+    [
+      "@Composable fun AppNav() {",
+      "  NavHost(navController, startDestination = TunerRoute) {",
+      `    composable<TunerRoute> {\n${tuner}\n    }`,
+      "    composable<SettingsRoute> { Settings(onOpen = { navController.navigate(TunerRoute) }) }",
+      "    composable<InstrumentsRoute> { Instruments() }",
+      "  }",
+      "}",
+    ].join("\n");
+
+  it("credits a link to the screen whose call makes it, and opens each screen it may draw", async () => {
+    const { links } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav(
+        [
+          "      if (scientific) ScientificTuner(header = { Header() }, onOpen = { navController.navigate(SettingsRoute) })",
+          "      else SimpleTuner(onOpen = { navController.navigate(SettingsRoute) }) { Header(onOpen = { navController.navigate(InstrumentsRoute) }) }",
+        ].join("\n"),
+      ),
+    });
+    expect(links).toEqual([
+      "ScientificTuner -> Settings (push)",
+      "Settings -> ScientificTuner (push)",
+      "Settings -> SimpleTuner (push)",
+      "SimpleTuner -> Instruments (push)",
+      "SimpleTuner -> Settings (push)",
+    ]);
+  });
+
+  it("starts on each screen a destination may draw, and counts each as a screen", async () => {
+    const { compose, kindOf } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav("      if (scientific) ScientificTuner(header = { Header() }) else SimpleTuner()"),
+    });
+    expect(compose.starts?.sort()).toEqual([
+      "compose:app/Views.kt#ScientificTuner",
+      "compose:app/Views.kt#SimpleTuner",
+    ]);
+    expect([kindOf("ScientificTuner"), kindOf("SimpleTuner"), kindOf("Header")]).toEqual([
+      "screen",
+      "screen",
+      "component",
+    ]);
+  });
+
+  it("credits navigation the screens share to each, and a callback passed in to the screen using it", async () => {
+    const { links } = await app({
+      "app/Views.kt": views,
+      "app/Section.kt": [
+        "fun NavGraphBuilder.tunerSection(onSettings: () -> Unit, onInstruments: () -> Unit) {",
+        "  composable<TunerRoute> {",
+        "    val back = { navController.navigate(SettingsRoute) }",
+        "    if (scientific) ScientificTuner(onOpen = onSettings, onBack = back) else SimpleTuner(onOpen = onInstruments, onBack = back)",
+        "  }",
+        "}",
+      ].join("\n"),
+      "app/Nav.kt": [
+        "@Composable fun AppNav() {",
+        "  NavHost(navController, startDestination = TunerRoute) {",
+        "    tunerSection(onSettings = { navController.navigate(SettingsRoute) }, onInstruments = { navController.navigate(InstrumentsRoute) })",
+        "    composable<SettingsRoute> { Settings() }",
+        "    composable<InstrumentsRoute> { Instruments() }",
+        "  }",
+        "}",
+      ].join("\n"),
+    });
+    expect(links).toEqual([
+      "ScientificTuner -> Settings (push)",
+      "SimpleTuner -> Instruments (push)",
+      "SimpleTuner -> Settings (push)",
+    ]);
+  });
+
+  it("doesn't take views drawn after a lambda's arrow or an if expression's else for another screen", async () => {
+    const { compose } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav(
+        "      SimpleTuner()\n      items.forEach { item -> Header(item) }\n      val c = if (x) 1 else 2\n      Instruments()",
+      ),
+    });
+    expect(compose.starts).toEqual(["compose:app/Views.kt#SimpleTuner"]);
+  });
+
+  it("reads `when` cases and `else if` as screens drawn one instead of another", async () => {
+    const { compose } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav(
+        "      when (mode) {\n        Mode.Simple -> SimpleTuner()\n        is Mode.Pro -> { ScientificTuner() }\n      }",
+      ),
+    });
+    expect(compose.starts?.sort()).toEqual([
+      "compose:app/Views.kt#ScientificTuner",
+      "compose:app/Views.kt#SimpleTuner",
+    ]);
+  });
+
+  it("reads `else if` as another branch", async () => {
+    const { compose } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav("      if (a) SimpleTuner() else if (b) ScientificTuner()"),
+    });
+    expect(compose.starts?.sort()).toEqual([
+      "compose:app/Views.kt#ScientificTuner",
+      "compose:app/Views.kt#SimpleTuner",
+    ]);
+  });
+
+  it("follows a callback by the value a screen's call hands on, not an argument's name", async () => {
+    const { links } = await app({
+      "app/Views.kt": views,
+      "app/Section.kt": [
+        "fun NavGraphBuilder.tunerSection(onSettings: () -> Unit, onInstruments: () -> Unit) {",
+        "  composable<TunerRoute> { if (x) ScientificTuner(onSettings = onInstruments) else SimpleTuner(onOpen = onSettings) }",
+        "}",
+      ].join("\n"),
+      "app/Nav.kt": [
+        "@Composable fun AppNav() {",
+        "  NavHost(navController, startDestination = TunerRoute) {",
+        "    tunerSection(onSettings = { navController.navigate(SettingsRoute) }, onInstruments = { navController.navigate(InstrumentsRoute) })",
+        "    composable<SettingsRoute> { Settings() }",
+        "    composable<InstrumentsRoute> { Instruments() }",
+        "  }",
+        "}",
+      ].join("\n"),
+    });
+    expect(links).toEqual(["ScientificTuner -> Instruments (push)", "SimpleTuner -> Settings (push)"]);
+  });
+
+  it("doesn't take a view drawn beside the screen, or the same view drawn twice, for another screen", async () => {
+    const { compose, links } = await app({
+      "app/Views.kt": views,
+      "app/Nav.kt": nav(
+        "      SimpleTuner()\n      if (showSheet) Instruments(onOpen = { navController.navigate(SettingsRoute) })\n      if (x) Header() else Header()",
+      ),
+    });
+    expect(compose.starts).toEqual(["compose:app/Views.kt#SimpleTuner"]);
+    // Drawn beside the screen, it isn't what opening the route shows, but the links in its own call are its own.
+    expect(links).toEqual(["Instruments -> Settings (push)", "Settings -> SimpleTuner (push)"]);
+  });
+});
+
 describe("Compose views", () => {
   it("makes what an Activity draws first a screen, leaves previews out, and keeps containers components", async () => {
     const { compose, kindOf } = await app({
@@ -417,6 +621,29 @@ describe("Compose views", () => {
 });
 
 describe("hostile Compose navigation", () => {
+  speedIt(
+    "reads a destination drawing thousands of views beside thousands of navigation calls quickly",
+    async () => {
+      const block = Array.from({ length: 10_000 }, () => "Alpha()\nnav.navigate(DetailRoute)").join("\n");
+      const started = performance.now();
+      await app({
+        "app/Views.kt": plain("Alpha") + plain("Detail"),
+        "app/Nav.kt": `@Composable fun AppNav() { NavHost(nav, startDestination = HomeRoute) { composable<HomeRoute> {\n${block}\n}\n composable<DetailRoute> { Detail() } } }`,
+      });
+      expect(performance.now() - started).toBeLessThan(3_000);
+    },
+  );
+
+  speedIt("reads a destination drawing tens of thousands of views quickly", async () => {
+    const calls = Array.from({ length: 40_000 }, () => "Alpha()").join("\n");
+    const started = performance.now();
+    await app({
+      "app/Views.kt": plain("Alpha"),
+      "app/Nav.kt": `@Composable fun AppNav() { NavHost(nav, startDestination = HomeRoute) { composable<HomeRoute> {\n${calls}\n} } }`,
+    });
+    expect(performance.now() - started).toBeLessThan(3_000);
+  });
+
   speedIt.each([
     [
       "thousands of destinations and links",
