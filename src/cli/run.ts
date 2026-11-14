@@ -2,10 +2,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { writeOutputs } from "../output/write.js";
+import { mergeAgentTokens } from "../scan/agent-tokens.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
 import { scanNotes } from "../scan/notes.js";
 import { FRAMEWORK_NAMES, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
+import { AGENT_PROMPT } from "./agent-prompt.js";
 
 const HELP = `designmap: map a mobile app's design system from its code
 
@@ -13,6 +15,11 @@ Usage
   designmap [dir]   Read the app in dir (default: here) and write designmap/tokens.json and designmap/DESIGN.md
   designmap mcp [dir]
                     Run the MCP server, so a coding agent reads the app's design system while it builds
+  designmap prompt  Print instructions for a coding agent to read the app's design system into designmap/agent.json
+
+Let a coding agent read an app whose setup Designmap's own reading misses
+  claude -p "$(npx designmap prompt)" --allowedTools Read Glob Grep Write
+  designmap --from-agent designmap/agent.json
 
 Add to Claude Code
   claude mcp add designmap -- designmap mcp /path/to/app
@@ -20,6 +27,8 @@ Add to Claude Code
 Options
   --out <dir>       Write the files here instead
   --json            Print the whole scan as JSON instead of writing files
+  --from-agent <file>
+                    Add the colours and text styles a coding agent read (see prompt), those the code bears out
   -v, --version
   -h, --help
 `;
@@ -45,6 +54,7 @@ export async function run(argv: string[], io: Output): Promise<number> {
     const { values, positionals } = parse(argv);
     if (values.help) return done(io.out, HELP);
     if (values.version) return done(io.out, await version());
+    if (positionals[0] === "prompt") return done(io.out, AGENT_PROMPT);
     const serving = positionals[0] === "mcp";
     const root = await appFolder(serving ? positionals.slice(1) : positionals);
     // Awaited here, so a usage error thrown while mapping is caught below.
@@ -67,13 +77,26 @@ async function appFolder(folders: string[]): Promise<string> {
 /** Reads the app and writes tokens.json and DESIGN.md, or prints the scan with `--json`. */
 async function map(
   root: string,
-  values: { out?: string; json?: boolean },
+  values: { out?: string; json?: boolean; "from-agent"?: string },
   { out, error }: Output,
 ): Promise<number> {
-  const scan = await scanRepo(root);
+  let scan = await scanRepo(root);
   const gaps = readGaps(scan);
   if (gaps) error(`designmap: ${gaps}`);
   for (const note of scanNotes(scan)) error(`designmap: ${note}`);
+  const agentFile = values["from-agent"];
+  if (agentFile) {
+    const merge = await fromAgent(scan, path.resolve(agentFile));
+    scan = merge.scan;
+    // With --json, stdout is the scan alone.
+    (values.json ? error : out)(`Added ${plural(merge.added, "token")} from ${agentFile}`);
+    if (merge.dropped.length) {
+      const some = merge.dropped.slice(0, 5).join(", ");
+      error(
+        `designmap: left out ${plural(merge.dropped.length, "token")} the code doesn't bear out: ${some}${merge.dropped.length > 5 ? ", …" : ""}`,
+      );
+    }
+  }
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
   if (scan.frameworks.length === 0)
     throw new UsageError(`no ${SUPPORTED_FRAMEWORKS} code found in ${scan.root}`, 1);
@@ -87,6 +110,20 @@ async function map(
     );
   }
   return 0;
+}
+
+async function fromAgent(scan: ScanResult, file: string) {
+  let json: unknown;
+  try {
+    json = JSON.parse(await readFile(file, "utf8"));
+  } catch (e) {
+    throw new UsageError(`couldn't read ${file}: ${(e as Error).message}`, 1);
+  }
+  try {
+    return await mergeAgentTokens(scan, json);
+  } catch (e) {
+    throw new UsageError((e as Error).message, 1);
+  }
 }
 
 /** Serves MCP over stdin and stdout until the agent disconnects; stdout belongs to the protocol from here on. */
@@ -106,6 +143,7 @@ function parse(argv: string[]) {
       options: {
         out: { type: "string" },
         json: { type: "boolean" },
+        "from-agent": { type: "string" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },

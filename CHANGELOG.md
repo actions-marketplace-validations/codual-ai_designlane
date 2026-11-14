@@ -7,6 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A coding agent can read an app whose setup Designmap's own reading misses: `designmap prompt` prints the
+  instructions (for example `claude -p "$(npx designmap prompt)"`), and `designmap --from-agent designmap/agent.json`
+  adds the colours and text styles the agent found that the code bears out (a value it writes, a name it uses),
+  leaving out and naming the rest.
+
 - Apps with several themes: each theme beside the default one is read with its own colours, Light and Dark, and
   written under `theme` in tokens.json, keyed by its name (old files without it read as before). The Figma plugin
   makes a collection for each, "IceCubes · Desert (Designmap)", matching, renaming and deprecating a theme's
