@@ -144,7 +144,7 @@ const SCALER = /(?:scale|normali[sz]e|pixelratio|^rfvalue$|^rf$|^ms$|^vs$|^s$)/i
 /** A value as written; a size scaled to the phone's settings is the size written first, as the design gives it. */
 export function literalOf(node: ts.Expression): string | number | undefined {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  // A font stack built as a template (`Expensify Neue, ${FALLBACK}`) starts with the family it names.
+  // A font stack built as a template (`Brand Neue, ${FALLBACK}`) starts with the family it names.
   if (ts.isTemplateExpression(node) && node.head.text.includes(",")) return node.head.text;
   if (ts.isCallExpression(node) && SCALER.test(accessPath(node.expression)?.at(-1) ?? "")) {
     const first = node.arguments[0] && unwrapped(node.arguments[0]);

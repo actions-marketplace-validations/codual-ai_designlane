@@ -99,7 +99,7 @@ export interface TypeStyle {
   uses: number;
 }
 
-/** One of the app's themes beside its default one (`Desert` beside `IceCube`): the same colours, each with its own
+/** One of the app's themes beside its default one (`Desert` beside `Ocean`): the same colours, each with its own
  * Light and Dark value. */
 export interface ColorTheme {
   name: string;

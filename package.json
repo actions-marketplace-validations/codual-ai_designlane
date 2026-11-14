@@ -1,8 +1,14 @@
 {
   "name": "designmap",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "Map your mobile app's design system from its code: colors, type, spacing and components, for SwiftUI, Jetpack Compose and React Native.",
+  "description": "Keep your design tools in step with your app's code: reads the colours and text styles your SwiftUI, Jetpack Compose or React Native code names and syncs them to Figma.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codual-ai/designmap.git"
+  },
+  "homepage": "https://github.com/codual-ai/designmap#readme",
+  "bugs": "https://github.com/codual-ai/designmap/issues",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {

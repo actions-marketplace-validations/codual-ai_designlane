@@ -1,64 +1,175 @@
 # Designmap
 
-Keep your design tools in sync with your app's code.
+[![npm](https://img.shields.io/npm/v/designmap.svg)](https://www.npmjs.com/package/designmap)
+[![CI](https://github.com/codual-ai/designmap/actions/workflows/ci.yml/badge.svg)](https://github.com/codual-ai/designmap/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-https://github.com/user-attachments/assets/29a82c2f-6df5-4788-a596-fab2a4b10efb
+**Your design tools stay in step with your app's code.** Run `designmap` in your iOS, Android or React Native repo
+and it reads the colours and text styles your code names, so your design tool's variables and text styles update with
+every push.
 
-## How it works
+![A Figma file synced by Designmap: each colour from the code as a variable with its light and dark values, and the text styles](.github/assets/hero.png)
 
-1. **Read from the code.** Designmap reads your app's colours, type styles, spacing and corner radii, with how the
-   code refers to each one. The colours and text styles the code names (`Theme.surface`, a typography style) go to
-   `designmap/tokens.json`, the design system a sync keeps; values written in place in a screen's layout, and the
-   spacing and radii, are listed in `DESIGN.md`, so editing a screen doesn't change the design system. A GitHub
-   Action keeps both current on every push.
-2. **See what changed.** The Designmap plugin for Figma reads `tokens.json` from your repo and shows the plan: what's
-   new, what changed, and what the code no longer uses. Nothing changes until you press Apply.
-3. **Apply.** Your Figma variables and text styles update in place, and a page in the file shows the design system
-   as swatches and type samples. Names a designer changed are kept, and nothing is deleted.
+*An app's design system in Figma, synced from its code: each colour with its light and dark value and how the code
+names it (`Theme.accent`).*
 
-Designmap reads SwiftUI and Jetpack Compose apps today. For Compose it reads the design tokens: the Material colour
-scheme (each role with its Light and Dark value), the type scale and named text styles, an app's own colour class,
-colour resources, and the spacing and corner radii written in `dp`.
+- **Always matches the app.** Your design file shows exactly what the code uses, nothing guessed.
+- **You stay in control.** See every change before you apply it. Renamed tokens keep their variables, so designs
+  never break.
+- **Free and private by default.** No AI and no account needed: it runs in your GitHub Actions, and your code stays
+  with you. Bring your own coding agent only if you want to.
 
-For both, it finds the app's screens and how they open each other (pushed, a sheet, a dialog, full screen, a popover, a
-tab, a pane beside, or starting over) and the screen the app starts on: in SwiftUI through navigation links,
-presentation modifiers, tabs, split views and an app's own router; in Compose through Navigation Compose, Navigation 3
-and Circuit. It doesn't yet read Compose tab switches, or spacing the code names (`Dimens.medium`).
+> [!NOTE]
+> Designmap works with **Figma** today, with **Penpot** and **Sketch** next. It writes standard W3C design tokens,
+> which Tokens Studio and Style Dictionary already import.
 
-React Native support has started with colours: those an app's theme objects name (a `light` and a `dark` theme paired
-into one colour, a theme's colours reached through another's), Tailwind's (a `tailwind.config.js`, or a CSS
-`@theme`, as NativeWind and Uniwind use), and colours written straight into styles. It reads text styles too: those
-a typography object names, and those written in place in style sheets and `style` props (a font file's name like
-`Inter-SemiBold` read as its family and weight, a size scaled to the phone's settings read at the size written), with
-Tailwind's text classes; and the spacing and corner radii styles and Tailwind classes set. It finds the app's
-screens: those its navigators show (React Navigation's `<Stack.Screen>`, its static `screens` config and an app's own
-stack creators), Expo Router's route files, a modal's whole content, and components that look like whole pages
-(lists, scrolling, safe areas); links between them come later. A React Native app's SwiftUI or Compose code (a widget, an extension) is left out, as its native
-side.
+## Get started (30 seconds)
+
+Needs Node 22 or later. In your app's repo:
+
+```sh
+npx designmap .
+```
+
+That's it. You get two files:
+
+```
+designmap/
+├── tokens.json   the design system the code names, as W3C design tokens: what your design tool syncs
+└── DESIGN.md     the full report: every colour, text style, spacing and corner radius, with where each is used
+```
+
+Then keep your design file in step:
+
+1. **Add the GitHub Action.** On every push it updates `designmap/tokens.json` and commits it when it changed
+   ([workflow](figma-plugin/README.md#keeping-tokensjson-up-to-date)).
+2. **Install the Figma plugin** and connect your repo, with a token that can only read it
+   ([plugin](figma-plugin/README.md)).
+3. **Apply.** After each push the plugin shows what changed in the code. Read the plan and press Apply.
+
+**One tool, three platforms.** SwiftUI, Jetpack Compose and React Native, on macOS, Linux and Windows.
+
+## See it in action
+
+https://github.com/user-attachments/assets/455e8d74-46e9-4bd6-9039-55d72b9a49d1
+
+Real output, run on a small SwiftUI shop app:
+
+![designmap run on a SwiftUI app: it finds 5 colours and 2 text styles and writes tokens.json and DESIGN.md](.github/assets/cli.gif)
+
+Each colour in `tokens.json` records how the code refers to it and where it's declared, so the plugin can show it
+and find it again after any rename:
+
+```json
+"Brand": {
+  "$type": "color",
+  "$value": { "colorSpace": "srgb", "components": [1, 0.102, 0.18], "hex": "#ff1a2e" },
+  "$extensions": {
+    "designmap": {
+      "reference": "Color(\"Brand\")",
+      "source": "Shop/Assets.xcassets/Brand.colorset/Contents.json",
+      "modes": { "dark": { "colorSpace": "srgb", "components": [1, 0.333, 0.4], "hex": "#ff5566" } }
+    }
+  }
+}
+```
+
+In Figma, the plugin lists what's new, what changed and what the code no longer uses. Nothing changes in your file
+until you press Apply; then your variables and text styles update in place, and a page in the file shows the design
+system as swatches and type samples.
+
+## What it does
+
+| Capability | What you get |
+|---|---|
+| Colours | Every colour the code names, from asset catalogs, theme objects, colour resources and Tailwind, as Figma variables |
+| Light and dark | A colour's light and dark values as one variable with two modes |
+| Text styles | The app's type scale and named styles: family, size and weight, as Figma text styles |
+| A plan you apply | What's new, what changed and what the code no longer uses, each with how the code refers to it |
+| Safe renames | A token renamed in the code, or a whole theme renamed, keeps its variable and every design using it |
+| Several themes | An app whose users pick a theme gets a Figma collection for each, with Light and Dark modes |
+| Your coding agent, for unusual setups | Your agent reads the app; Designmap checks every value against the code before syncing it |
+| Two apps, one repo | An iPhone and an Android app in one repo each get their own design system |
+| The full picture | `DESIGN.md` lists every value the code uses and the app's screens (for SwiftUI and Compose, how they open each other too) |
+| Design context for agents | An agent can ask for the design system while it codes: `claude mcp add designmap -- npx designmap mcp .` |
+
+## Unusual setup? Let your coding agent read it
+
+Designmap's own reading covers the common ways apps define colours and text styles. If your app builds its theme
+some other way, have your coding agent do the reading, and Designmap checks it before anything reaches Figma:
+
+```sh
+claude -p "$(npx designmap prompt)" --allowedTools Read Glob Grep Write   # writes designmap/agent.json
+npx designmap --from-agent designmap/agent.json                           # checks it, writes tokens.json
+```
+
+A colour is kept only when the code writes its exact value and uses its name; whatever isn't is listed and left out.
+Any agent works: `designmap prompt` prints plain instructions.
+
+## Supported
+
+| | Today | Next |
+|---|---|---|
+| **Code** | SwiftUI, Jetpack Compose, React Native | more to come |
+| **Design tools** | Figma | Penpot, Sketch |
+| **Direction** | code to design | design to code: a change in Figma suggests the code edit, ready for a pull request |
+| **Token formats** | W3C design tokens (Tokens Studio, Style Dictionary) | |
+
+## What it reads
+
+The design system is what the code names: a colour declared with a name (`Theme.surface`, an asset, a colour
+resource) and a text style the code defines (a typography style, the app's own font helper). Values written in place
+in a screen's layout, and spacing and corner radii, are listed in `DESIGN.md`, so editing a screen doesn't change your
+design system.
+
+- **SwiftUI:** asset catalog colours, colours declared in code, the app's own font helpers and text styles.
+- **Jetpack Compose:** the Material colour scheme (each role with its Light and Dark value), the type scale and named
+  text styles, an app's own colour class and colour resources.
+- **React Native:** theme objects (a light and a dark theme paired into one colour, a theme chosen per platform read as
+  iOS's), Tailwind's colours and text classes (a `tailwind.config.js`, or a CSS `@theme`, as NativeWind and Uniwind
+  use), and typography objects (a font file's name like `Inter-SemiBold` read as its family and weight).
+
+`DESIGN.md` also lists the app's screens and, for SwiftUI and Compose, how they open each other: pushed, a sheet, a
+dialog, full screen, a popover, a tab, a pane beside, or starting over.
 
 ### Apps with several themes
 
 Some apps let people pick a theme, each with a light and a dark version: SwiftUI types conforming to one protocol of
-colours (`IceCubeLight` and `IceCubeDark`, `DesertLight` and `DesertDark`), or React Native theme objects beyond one
-light and dark pair (`themes.black`, a list of presets). The first theme the code declares, or the one named `light`
-and `dark`, is the app's own colours, so reordering the themes in the code changes which one that is. Every other
-theme gets its own colours in tokens.json, under `theme`, and its own Figma collection with Light and Dark modes,
-such as **IceCubes · Desert (Designmap)**, with the same variable names, so designers can see every theme and design
-with any of them. DESIGN.md lists each theme's colours.
+colours (`OceanLight` and `OceanDark`, `DesertLight` and `DesertDark`), or React Native theme objects beyond one light
+and dark pair (`themes.black`, a list of presets). The first theme the code declares, or the one named `light` and
+`dark`, is the app's own colours, so reordering the themes in the code changes which one that is. Every other theme
+gets its own colours in tokens.json, under `theme`, and its own Figma collection with Light and Dark modes, such as
+**Shop · Desert (Designmap)**, with the same variable names, so designers can see every theme and design with any of
+them. DESIGN.md lists each theme's colours.
 
-A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a
-different blue, the platform's own fonts): `designmap/tokens.ios.json` and `designmap/tokens.android.json`, with one
-DESIGN.md covering both. Connect each Figma file to its app's path.
+### Two apps in one repo
+
+A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a different
+blue, the platform's own fonts): `designmap/tokens.ios.json` and `designmap/tokens.android.json`, with one `DESIGN.md`
+covering both. Connect each design file to its app's path.
 
 ### A design system in its own repo
 
-Some teams keep their theme in a separate library that the app imports. Designmap then tells you the theme is
-defined outside the app. Add Designmap to the library's repo instead, and connect the Figma plugin there: that repo
-is where the colours and text styles are written.
+Some teams keep their theme in a separate library that the app imports. Designmap then tells you the theme is defined
+outside the app. Add Designmap to the library's repo instead, and connect your design tool there.
+
+## Prerequisites
+
+| Requirement | Minimum | Check |
+|---|---|---|
+| Node.js | 22 | `node --version` |
+| A GitHub token for the plugin | read-only access to the app's repo contents | GitHub → Settings → Developer settings → Fine-grained tokens |
+
+## Documentation
+
+- [Figma plugin](figma-plugin/README.md): install, connect a repo, and what a sync does
+- [Keeping tokens.json up to date](figma-plugin/README.md#keeping-tokensjson-up-to-date): the GitHub Action
+- [Changelog](CHANGELOG.md)
 
 ## Status
 
-Designmap is in early development and not released yet.
+Version 0.1. Designmap reads SwiftUI, Jetpack Compose and React Native apps and syncs to Figma. Feedback and issues
+are welcome.
 
 ## License
 

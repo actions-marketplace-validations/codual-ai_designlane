@@ -33,7 +33,7 @@ export const appTitle = (app: string) => `${app.charAt(0).toUpperCase()}${app.sl
 /** What Designmap names what it makes for an app: "Rummy (Designmap)". */
 export const designmapName = (app: string | undefined) =>
   app ? `${appTitle(app)} (Designmap)` : "Designmap";
-/** What Designmap names the collection of one of an app's other themes: "IceCubes · Desert (Designmap)". */
+/** What Designmap names the collection of one of an app's other themes: "Rummy · Desert (Designmap)". */
 export const themeCollectionName = (app: string | undefined, theme: string) =>
   designmapName(app ? `${appTitle(app)} · ${theme}` : theme);
 

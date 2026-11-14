@@ -1,5 +1,5 @@
 /**
- * A React Native app's themes beside its light and dark one (`themes.black`, Mattermost-style presets, a
+ * A React Native app's themes beside its light and dark one (`themes.black`, a list of presets, a
  * `darkContrastTheme` in a file of its own): told apart from the colours the app keeps as its default theme, and
  * read as themes of their own, each with its Light and Dark values.
  */
@@ -102,7 +102,7 @@ function place<T extends ThemedEntry>(entry: T, named: string, parent: string, a
 }
 
 /**
- * When an app keeps several themes with the same colours (`themes.light`, `themes.dark`, `themes.black`; Mattermost's
+ * When an app keeps several themes with the same colours (`themes.light`, `themes.dark`, `themes.black`; an app's
  * presets), the colours of its light and dark themes, or of the first theme when none is named so, and every other
  * theme apart, each with its own colours. Siblings that aren't themes (a palette's `primary` and `secondary` roles)
  * are left as they are: only a parent named `themes`, or one holding a `light` or `dark`, counts.

@@ -72,7 +72,7 @@ export function themeColors(sources: KotlinSource[], known: ColorLookup): ThemeC
   return { colors, definitions };
 }
 
-/** `LightDefaultColorScheme` and `DarkDefaultColorScheme` are a pair; so are `TiviLightColors` and `TiviDarkColors`. */
+/** `LightDefaultColorScheme` and `DarkDefaultColorScheme` are a pair; so are `BrandLightColors` and `BrandDarkColors`. */
 const pairKey = (name: string) => name.toLowerCase().replace(/light|dark|night|day/g, "");
 
 /** The theme's Light palette and its Dark partner. Light is the one with a partner by name, then the one named light,

@@ -3,7 +3,7 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0 - 2026-11-14
 
 ### Added
 
@@ -14,7 +14,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - Apps with several themes: each theme beside the default one is read with its own colours, Light and Dark, and
   written under `theme` in tokens.json, keyed by its name (old files without it read as before). The Figma plugin
-  makes a collection for each, "IceCubes · Desert (Designmap)", matching, renaming and deprecating a theme's
+  makes a collection for each, "Rummy · Desert (Designmap)", matching, renaming and deprecating a theme's
   variables only within it, and DESIGN.md lists each theme's colours. SwiftUI: types conforming to one protocol of
   colours, paired light and dark by name or a `scheme` member (types with neither stay plain colours), each
   colour known by the protocol's member (`ColorSet.tintColor`); the first theme declared is the default. React

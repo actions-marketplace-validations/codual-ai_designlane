@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: nikhil27gargeya/designmap-clean@main # pin to a release once there is one
+      - uses: codual-ai/designmap@v0.1.0
         with:
           app: . # the app's folder, if it isn't the repo's root
 ```
