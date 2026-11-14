@@ -15,6 +15,7 @@ import {
   type JsSource,
   lineOf,
   objectIn,
+  platformChoice,
   propertyName,
   renderPath,
   shadowed,
@@ -108,6 +109,8 @@ class Modules {
   private readonly objects = new Map<JsSource, Map<string, ts.ObjectLiteralExpression>>();
   /** For each file, the name its default export's paths start with: its variable's, or the file's own. */
   private readonly defaultName = new Map<JsSource, string>();
+  /** A name holding the object another name holds on iOS, by `file#name`: `black` is `blackIOS`. */
+  private readonly choices = new Map<string, string>();
   private readonly imports = new Map<JsSource, Map<string, { from: string; name: string }>>();
 
   constructor(sources: JsSource[]) {
@@ -118,8 +121,16 @@ class Modules {
       for (const statement of source.file.statements) {
         if (ts.isVariableStatement(statement)) {
           for (const d of statement.declarationList.declarations) {
-            const value = d.initializer && objectIn(d.initializer);
-            if (ts.isIdentifier(d.name) && value) objects.set(d.name.text, value);
+            if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+            const value = objectIn(d.initializer);
+            if (value) objects.set(d.name.text, value);
+            // `const black = Platform.OS === "ios" ? blackIOS : blackAndroid`: iOS's theme, as the design shows it.
+            const chosen = platformChoice(d.initializer)?.ios;
+            const picked = chosen && unwrapped(chosen);
+            if (picked && ts.isIdentifier(picked))
+              this.choices.set(`${source.rel}#${d.name.text}`, picked.text);
+            const inPlace = picked && objectIn(picked);
+            if (inPlace) objects.set(d.name.text, inPlace);
           }
         } else if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
           const from = statement.moduleSpecifier.text;
@@ -145,12 +156,14 @@ class Modules {
   object(
     source: JsSource,
     name: string,
+    hops = 0,
   ): { object: ts.ObjectLiteralExpression; source: JsSource } | undefined {
     const own = this.objects.get(source)?.get(name);
     if (own) return { object: own, source };
+    const chosen = this.choices.get(`${source.rel}#${name}`);
+    if (chosen && hops < MAX_HOPS) return this.object(source, chosen, hops + 1);
     const target = this.imported(source, name);
-    const object = target && this.objects.get(target.source)?.get(target.root);
-    return object && target ? { object, source: target.source } : undefined;
+    return target && hops < MAX_HOPS ? this.object(target.source, target.root, hops + 1) : undefined;
   }
 
   /** The file and root name a local name is imported from: `import appColors from "./palette"`. */

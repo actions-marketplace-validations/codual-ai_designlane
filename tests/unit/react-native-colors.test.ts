@@ -284,6 +284,70 @@ describe("React Native colours, read carefully", () => {
     expect(color("text")?.dark).toBeUndefined();
   });
 
+  it("reads iOS's theme where the code chooses one by platform, as the design shows it", async () => {
+    const chosen = async (choice: string, extra = "") => {
+      const { rn } = await app({
+        "src/colors.ts": [
+          'import { Platform } from "react-native";',
+          'const light = { surfaceLight: "#ffffff" };',
+          'const dark = { surfaceLight: "#262931" };',
+          'const blackAndroid = { ...dark, surfaceLight: "#0d0d0d" };',
+          'const blackIOS = { ...dark, surfaceLight: "#161717" };',
+          extra,
+          `const black = ${choice};`,
+          "export const colors = {",
+          "  light: { ...light, backdropOpacity: 0.3 },",
+          "  dark: { ...dark, backdropOpacity: 0.9 },",
+          "  black: { ...black, backdropOpacity: 0.9 },",
+          "};",
+        ].join("\n"),
+        "src/V.tsx": view("<View />"),
+      });
+      return rn?.tokens.colors.find((c) => c.reference === "colors.black.surfaceLight")?.light;
+    };
+    expect(await chosen('Platform.OS === "ios" ? blackIOS : blackAndroid')).toBe("#161717");
+    expect(await chosen('Platform.OS !== "android" ? blackIOS : blackAndroid')).toBe("#161717");
+    expect(await chosen('"android" === Platform.OS ? blackAndroid : blackIOS')).toBe("#161717");
+    expect(await chosen("Platform.select({ android: blackAndroid, ios: blackIOS })")).toBe("#161717");
+    expect(await chosen("Platform.select({ default: blackAndroid, native: blackIOS })")).toBe("#161717");
+    expect(await chosen("Platform.select({ android: blackAndroid, default: blackIOS })")).toBe("#161717");
+    expect(
+      await chosen(
+        "Platform.select({ android: blackAndroid, ios })",
+        'const ios = { ...dark, surfaceLight: "#161717" };',
+      ),
+    ).toBe("#161717");
+    expect(await chosen("Platform.select({ android: blackAndroid })")).toBeUndefined();
+    expect(
+      await chosen('Platform.OS === "ios" ? { surfaceLight: "#161717" } : { surfaceLight: "#0d0d0d" }'),
+    ).toBe("#161717");
+    // A choice made in another file, imported.
+    const { rn } = await app({
+      // Read after the theme's file, so the theme's own path is the one a colour reached two ways keeps.
+      "src/z-black.ts": [
+        'import { Platform } from "react-native";',
+        'const blackAndroid = { surfaceLight: "#0d0d0d" };',
+        'const blackIOS = { surfaceLight: "#161717" };',
+        'export const black = Platform.OS === "ios" ? blackIOS : blackAndroid;',
+      ].join("\n"),
+      "src/colors.ts": [
+        'import { black } from "./z-black";',
+        'const light = { surfaceLight: "#ffffff" };',
+        'const dark = { surfaceLight: "#262931" };',
+        "export const colors = {",
+        "  light: { ...light, backdropOpacity: 0.3 },",
+        "  dark: { ...dark, backdropOpacity: 0.9 },",
+        "  black: { ...black, backdropOpacity: 0.9 },",
+        "};",
+      ].join("\n"),
+      "src/V.tsx": view("<View />"),
+    });
+    expect(rn?.tokens.colors.find((c) => c.reference === "colors.black.surfaceLight")?.light).toBe("#161717");
+    // Chosen by anything else, which theme it is can't be told.
+    expect(await chosen("isTablet ? blackIOS : blackAndroid", "const isTablet = false;")).toBeUndefined();
+    expect(await chosen('size === "ios" ? blackIOS : blackAndroid', 'const size = "large";')).toBeUndefined();
+  });
+
   it("writes references the code can use, and counts uses through `[…]`", async () => {
     const { color } = await app({
       "src/colors.ts":
@@ -341,7 +405,7 @@ describe("React Native themes beside each other", () => {
       "src/colors.ts": [
         'export const light = { fontDefault: "#2f343d" };',
         'export const dark = { fontDefault: "#c1c7d0" };',
-        'export const blackIOS = { fontDefault: "#e4e4e4" };',
+        'export const brandIOS = { fontDefault: "#e4e4e4" };',
         'export const brand = { accent: "#ff0000" };',
         "export const colors = { light: { ...light }, dark: { ...dark } };",
       ].join("\n"),
@@ -350,7 +414,7 @@ describe("React Native themes beside each other", () => {
     const font = rn?.tokens.colors.filter((c) => c.name === "fontDefault");
     expect(font?.map((c) => `${c.light}/${c.dark}`)).toEqual(["#2f343d/#c1c7d0"]);
     expect(rn?.tokens.colors.find((c) => c.name === "accent")).toBeDefined();
-    expect(scanNotes(scan).join(" ")).toContain("`blackIOS`");
+    expect(scanNotes(scan).join(" ")).toContain("`brandIOS`");
   });
 
   it("follows an alias into a file imported by a path alias, by the path only one colour has", async () => {

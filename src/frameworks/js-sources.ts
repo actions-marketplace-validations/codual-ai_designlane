@@ -165,6 +165,44 @@ export function objectIn(node: ts.Expression): ts.ObjectLiteralExpression | unde
   return undefined;
 }
 
+/** The branches of a choice the code makes by platform, with the one iOS takes, which is what a design shows:
+ * `Platform.select({ ios: a, android: b })` (`native`'s or `default`'s when it has no `ios`), and `Platform.OS === "ios" ? a : b`
+ * (any platform named, `===` or `!==`). Missing for any other expression. */
+export function platformChoice(
+  node: ts.Expression,
+): { ios: ts.Expression; all: ts.Expression[] } | undefined {
+  const value = unwrapped(node);
+  if (ts.isCallExpression(value) && dottedName(value.expression) === "Platform.select") {
+    const options = value.arguments[0] && unwrapped(value.arguments[0]);
+    if (!options || !ts.isObjectLiteralExpression(options)) return undefined;
+    // `{ ios: a }` and `{ ios }` alike; iOS takes `ios`, else `native`, else `default`, as React Native does.
+    const branches = new Map<string, ts.Expression>();
+    for (const p of options.properties) {
+      if (ts.isShorthandPropertyAssignment(p)) branches.set(p.name.text, p.name);
+      else if (ts.isPropertyAssignment(p)) {
+        const key = propertyName(p.name);
+        if (key !== undefined) branches.set(key, p.initializer);
+      }
+    }
+    const ios = branches.get("ios") ?? branches.get("native") ?? branches.get("default");
+    return ios ? { ios, all: [...branches.values()] } : undefined;
+  }
+  if (!ts.isConditionalExpression(value)) return undefined;
+  const test = unwrapped(value.condition);
+  if (!ts.isBinaryExpression(test)) return undefined;
+  const sides = [unwrapped(test.left), unwrapped(test.right)];
+  const named = sides.find((s) => ts.isStringLiteral(s));
+  if (!named || !ts.isStringLiteral(named) || !sides.some((s) => dottedName(s) === "Platform.OS"))
+    return undefined;
+  const op = test.operatorToken.kind;
+  const equal = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.EqualsEqualsToken;
+  const unequal =
+    op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken;
+  if (!equal && !unequal) return undefined;
+  const whenIos = (named.text === "ios") === equal ? value.whenTrue : value.whenFalse;
+  return { ios: whenIos, all: [value.whenTrue, value.whenFalse] };
+}
+
 /** Whether a name is a local one where it's read, a parameter or a variable of an enclosing function or block, rather
  * than the module's constant: `function Button({ brand }) { return brand; }`. */
 export function shadowed(node: ts.Identifier): boolean {

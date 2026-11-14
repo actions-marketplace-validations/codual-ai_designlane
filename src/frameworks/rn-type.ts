@@ -16,6 +16,7 @@ import {
   type JsSource,
   lineOf,
   objectIn,
+  platformChoice,
   propertyName,
   renderPath,
   unwrapped,
@@ -266,26 +267,26 @@ function namedStyles(
 
 const FONT_KEYS = new Set(["fontSize", "fontFamily", "fontWeight"]);
 
+/** A style's `Platform.select({ … })`; a ternary on `Platform.OS` isn't read in styles yet. */
+const selectChoice = (node: ts.Expression) => {
+  const call = unwrapped(node);
+  return ts.isCallExpression(call) && dottedName(call.expression) === "Platform.select"
+    ? platformChoice(call)
+    : undefined;
+};
+
 /** Every branch object of `Platform.select({ ios: { … }, android: { … } })`. */
 function platformBranches(node: ts.Expression): ts.ObjectLiteralExpression[] {
-  const call = unwrapped(node);
-  const options = ts.isCallExpression(call) && call.arguments[0] && unwrapped(call.arguments[0]);
-  if (!options || !ts.isObjectLiteralExpression(options)) return [];
-  return options.properties.flatMap((p) => {
-    const value = ts.isPropertyAssignment(p) ? unwrapped(p.initializer) : undefined;
-    return value && ts.isObjectLiteralExpression(value) ? [value] : [];
+  return (selectChoice(node)?.all ?? []).flatMap((b) => {
+    const value = unwrapped(b);
+    return ts.isObjectLiteralExpression(value) ? [value] : [];
   });
 }
 
-/** The iOS branch of `Platform.select({ ios: { … }, … })`, or its first. */
+/** The branch object of `Platform.select({ … })` that iOS takes. */
 function platformBranch(node: ts.Expression): ts.ObjectLiteralExpression | undefined {
-  const call = unwrapped(node);
-  if (!ts.isCallExpression(call) || dottedName(call.expression) !== "Platform.select") return undefined;
-  const options = call.arguments[0] && unwrapped(call.arguments[0]);
-  if (!options || !ts.isObjectLiteralExpression(options)) return undefined;
-  const branches = options.properties.filter(ts.isPropertyAssignment);
-  const chosen = branches.find((b) => propertyName(b.name) === "ios") ?? branches[0];
-  const value = chosen && unwrapped(chosen.initializer);
+  const choice = selectChoice(node);
+  const value = choice && unwrapped(choice.ios);
   return value && ts.isObjectLiteralExpression(value) ? value : undefined;
 }
 
