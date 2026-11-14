@@ -7,6 +7,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A sync follows a theme the code renamed (`MainTheme.colors.error` becoming `BoltTheme.colors.error`) with its
+  values unchanged: each variable and text style keeps its name and everything using it, however many changed.
+
 - tokens.json holds only the colours and text styles the code names, the design system a sync keeps. Colours and
   text styles written in place, and spacing and corner radii, are listed in DESIGN.md only, so editing a screen's
   layout no longer shows up as design-system changes in Figma. A Figma file synced before this sees those

@@ -52,7 +52,8 @@ On each sync:
 
 - **New** tokens are created, named from the code.
 - **Changed** values are updated in place. Renames a designer made are kept.
-- Tokens **renamed in the code** keep their variable or text style when nothing else changed.
+- Tokens **renamed in the code** keep their variable or text style when nothing else changed, and so does every
+  token of a theme the code renamed.
 - Tokens **no longer in the code** are marked deprecated, never deleted, since designs may still use them: variables
   are hidden from publishing, and text styles say so in their description (Figma can't hide a style). They come back
   if the code does.

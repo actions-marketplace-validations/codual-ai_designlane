@@ -133,10 +133,13 @@ function dropsAndRenames<F, C>(
   // Renaming a duplicated entry would leave its copy to take its old identity, so only single entries are renamed;
   // every dropped entry still counts towards whether a match is the only one.
   const renamable = (entry: Synced<F>) => copies.get(entry.identity) === 1;
-  const renamesSkipped = dropped.length * created.length > MAX_RENAME_COMPARISONS;
-  const renamed = renamesSkipped
-    ? new Map<Synced<F>, CodeToken<C>>()
-    : renames(dropped, created, same, renamable);
+  const renamed = ownerRenames(dropped, created, same, renamable);
+  const goneLeft = dropped.filter((entry) => !renamed.has(entry));
+  const takenByOwner = new Set(renamed.values());
+  const newLeft = created.filter((token) => !takenByOwner.has(token));
+  const renamesSkipped = goneLeft.length * newLeft.length > MAX_RENAME_COMPARISONS;
+  if (!renamesSkipped)
+    for (const [entry, token] of renames(goneLeft, newLeft, same, renamable)) renamed.set(entry, token);
   const takenByRename = new Set(renamed.values());
   return {
     rename: [...renamed].map(([entry, token]) => ({ id: entry.id, name: entry.name, token })),
@@ -146,6 +149,56 @@ function dropsAndRenames<F, C>(
     renamesSkipped,
     toCreate: created.filter((token) => !takenByRename.has(token)),
   };
+}
+
+/** A reference written as a path from an owner: `MainTheme.colors.error`, not `Color("Brand.bg")` or `R.color.x`'s
+ * call-free cousins with quotes. */
+const OWNED_PATH = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$/;
+
+/** What an identity names inside its owner: `color:colors.error` for `color:MainTheme.colors.error`, and for a text
+ * style its name too (`type:typography.body|body`). Missing for one with no owner: an asset (`Color("Brand")`), a
+ * file's own constant (`accent@Home.swift`), a value. */
+function memberOf(identity: string): string | undefined {
+  const kind = kindOf(identity);
+  const [reference = "", ...name] = identity.slice(kind.length + 1).split("|");
+  const member = OWNED_PATH.exec(reference)?.[2];
+  return member ? [`${kind}:${member}`, ...name].join("|") : undefined;
+}
+
+/** Each renamable gone entry paired with the new token whose owner alone was renamed (`MainTheme.colors.error` became
+ * `BoltTheme.colors.error`), with the same value: each the only one of its member on its side. */
+function ownerRenames<F, C>(
+  gone: Synced<F>[],
+  created: CodeToken<C>[],
+  same: (inFile: F, inCode: C) => boolean,
+  renamable: (entry: Synced<F>) => boolean,
+): Map<Synced<F>, CodeToken<C>> {
+  const byMember = <T>(items: T[], identity: (item: T) => string) => {
+    const found = new Map<string, T[]>();
+    for (const item of items) {
+      const member = memberOf(identity(item));
+      if (!member) continue;
+      const same = found.get(member);
+      if (same) same.push(item);
+      else found.set(member, [item]);
+    }
+    return found;
+  };
+  const newByMember = byMember(created, (token) => token.identity);
+  const pairs = new Map<Synced<F>, CodeToken<C>>();
+  for (const [member, [entry, ...others]] of byMember(gone, (e) => e.identity)) {
+    const [token, ...rivals] = newByMember.get(member) ?? [];
+    if (
+      entry &&
+      token &&
+      !others.length &&
+      !rivals.length &&
+      renamable(entry) &&
+      same(entry.value, token.value)
+    )
+      pairs.set(entry, token);
+  }
+  return pairs;
 }
 
 /** More comparisons than this between gone and new tokens is a rewrite, not a rename: the plan says it skipped them. */
