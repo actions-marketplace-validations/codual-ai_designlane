@@ -13,19 +13,23 @@ export interface ResourceColor {
 /** Where colour resources live: `res/values/colors.xml`, `res/values-night/themes.xml` and the like. */
 export const RESOURCE_FILE = /(?:^|\/)res\/values[\w-]*\/[^/]+\.xml$/;
 const RESOURCE = /<color\s+name\s*=\s*"([\w.]+)"\s*>\s*([^<]*?)\s*<\/color>/g;
+const VALUES_FOLDER = /(?:^|\/)res\/(values[\w-]*)\//;
 /** Colours pointing at colours this many times over are a loop, not a palette. */
 const MAX_LINKS = 8;
 
 /** The app's own resources come before a build variant's (`src/debug/res`), and `values-night` before a qualified
  * one (`values-night-v31`), so the first value found for a colour is the one the app ships with by default. */
-const priority = (rel: string) =>
+export const resourcePriority = (rel: string) =>
   (/(?:^|\/)src\/main\//.test(rel) ? 0 : 2) + (/\/values-night\//.test(rel) ? 0 : 1);
+
+/** The resource folder a file is in (`values`, `values-night-v31`), if it's one of the `values` folders. */
+export const valuesFolder = (rel: string) => rel.match(VALUES_FOLDER)?.[1];
 
 export function resourceColors(files: { rel: string; text: string }[]): ResourceColor[] {
   const light = new Map<string, { value: string; source: string }>();
   const dark = new Map<string, string>();
-  for (const { rel, text } of [...files].sort((a, b) => priority(a.rel) - priority(b.rel))) {
-    const folder = rel.match(/(?:^|\/)res\/(values[\w-]*)\//)?.[1];
+  for (const { rel, text } of [...files].sort((a, b) => resourcePriority(a.rel) - resourcePriority(b.rel))) {
+    const folder = valuesFolder(rel);
     const night = folder ? /-night\b/.test(folder) : false;
     if (folder !== "values" && !night) continue;
     for (const m of text.matchAll(RESOURCE)) {

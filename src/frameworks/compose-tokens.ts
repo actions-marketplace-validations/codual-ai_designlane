@@ -5,6 +5,7 @@ import { palette } from "../scan/palette.js";
 import { typeScale } from "../scan/type-scale.js";
 import type { DesignTokens } from "../scan/types.js";
 import { RESOURCE_FILE, resourceColors } from "./android-resources.js";
+import { textAppearances } from "./android-text-appearances.js";
 import { composeColors } from "./compose-colors.js";
 import { composeType } from "./compose-type.js";
 import { callArguments, Spans } from "./kotlin-calls.js";
@@ -14,6 +15,8 @@ import type { ScanContext } from "./plugin.js";
 
 /** Calls whose `dp` values are spacing: padding, the gaps between items, and spacers' sizes. */
 const SPACING_CALL = /(?<!\w)(?:padding|spacedBy|Spacer|PaddingValues)\s*\(/g;
+/** Resource files holding colours, text appearances or the dimensions they read. */
+const READ_RESOURCES = /<(?:color|style|dimen)\b/;
 const RADIUS_CALL = /(?<!\w)RoundedCornerShape\s*\(/g;
 const DP = /(?<![\w.])(\d+(?:\.\d+)?)\.dp\b/g;
 /** Generic families stand for a platform font, not one a designer installs. */
@@ -42,17 +45,21 @@ export async function composeTokens(ctx: ScanContext, sources: KotlinSource[]): 
   const xml: { rel: string; text: string }[] = [];
   for (const f of ctx.files.filter((f) => RESOURCE_FILE.test(f.rel))) {
     const text = await ctx.read(f);
-    if (text?.includes("<color")) xml.push({ rel: f.rel, text });
+    if (text && READ_RESOURCES.test(text)) xml.push({ rel: f.rel, text });
   }
   const ui = sources.filter((s) => s.compose);
+  const appearances = textAppearances(
+    xml,
+    sources.map((s) => s.code),
+  );
   const type = composeType(sources);
   const inline = typeScale(type);
-  const fonts = [...new Set([...type.named.map((s) => s.family), ...inline.fonts])].filter(
-    (f) => f && f !== SYSTEM && !GENERIC_FAMILY.test(f),
-  );
+  const fonts = [
+    ...new Set([...[...type.named, ...appearances].map((s) => s.family), ...inline.fonts]),
+  ].filter((f) => f && f !== SYSTEM && !GENERIC_FAMILY.test(f));
   return {
     ...palette(composeColors(sources, resourceColors(xml))),
-    typeStyles: [...type.named, ...inline.typeStyles].sort(
+    typeStyles: [...type.named, ...appearances, ...inline.typeStyles].sort(
       (a, b) => b.uses - a.uses || a.name.localeCompare(b.name),
     ),
     fonts,

@@ -7,6 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Android text styles kept in XML resources (`TextAppearance.*` styles and those inheriting one, followed up to
+  Material's own), with their size, family and weight.
+- React Native font sizes an app names on its own (`variables.fontSizeLarge`, `FONT_SIZE_SMALL`), as text styles
+  holding a size.
+
 - React Native colours of a theme chosen by platform (`Platform.OS === "ios" ? blackIOS : blackAndroid`,
   `Platform.select`, in the file or imported) read as iOS's, as a design shows them.
 

@@ -62,6 +62,11 @@ export function weightOf(expression: string): string {
     named.match(/^W(\d00)$/)?.[1] ??
       expression.match(/^FontWeight\s*\(\s*(?:weight\s*=\s*)?(\d+)\s*\)$/)?.[1],
   );
+  return weightByHundred(number);
+}
+
+/** `600` as `semibold`; anything but 100 to 900 is worked out as the app runs. */
+export function weightByHundred(number: number): string {
   return (Number.isFinite(number) && BY_HUNDRED[Math.round(number / 100) - 1]) || COMPUTED;
 }
 

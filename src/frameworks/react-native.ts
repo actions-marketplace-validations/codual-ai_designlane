@@ -5,6 +5,7 @@ import { typeScale } from "../scan/type-scale.js";
 import { type JsSource, jsSources } from "./js-sources.js";
 import type { FrameworkPlugin, ScanContext } from "./plugin.js";
 import { rnColors } from "./rn-colors.js";
+import { namedFontSizes } from "./rn-font-sizes.js";
 import { rnType } from "./rn-type.js";
 import { rnViews } from "./rn-views.js";
 import { TAILWIND_CONFIG, tailwindColors } from "./tailwind-colors.js";
@@ -117,6 +118,7 @@ export const reactNative: FrameworkPlugin = {
     const tailwind = await tailwindColors(ctx, sources);
     const theme = rnColors(sources, tailwind.files);
     const type = rnType(sources, tailwind.files);
+    const fontSizes = namedFontSizes(sources.filter((s) => !tailwind.files.has(s.rel)));
     // Tailwind's classes only in an app using Tailwind: elsewhere `p-4` is just a string.
     const classes: TailwindType =
       tailwind.used || tailwind.named.length > 0
@@ -136,7 +138,7 @@ export const reactNative: FrameworkPlugin = {
           literals: theme.literals,
           system: theme.system,
         }),
-        typeStyles: [...type.named, ...scale.typeStyles].sort(
+        typeStyles: [...type.named, ...fontSizes, ...scale.typeStyles].sort(
           (a, b) => b.uses - a.uses || a.name.localeCompare(b.name),
         ),
         fonts: scale.fonts,
