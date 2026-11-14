@@ -5,10 +5,12 @@
  */
 
 import type { NamedColor, ThemeFindings } from "../scan/palette.js";
-import { lineNumbers } from "./source-text.js";
+import type { ValueLocation } from "../scan/types.js";
+import { lineNumbers, locator } from "./source-text.js";
 import { structs } from "./swift-source.js";
 import { type SwiftTokens, tokenIndexAt } from "./swift-tokens.js";
 import { type SwiftSource, tokensOf } from "./swiftui-sources.js";
+import { valueAt, withLocations } from "./value-locations.js";
 
 const PROTOCOL = /\bprotocol\s+([A-Z]\w*)/g;
 /** A protocol's colour: `var tintColor: Color { get set }`. */
@@ -26,8 +28,16 @@ const FIXED_VALUES: Record<string, string> = { white: "#ffffff", black: "#000000
 /** How far after `protocol Name` its body's `{` can be. */
 const MAX_HEADER_TOKENS = 64;
 
-/** A colour value the code writes at an offset of a file, as `#rrggbb[aa]`. */
-export type ValueAt = (source: SwiftSource, offset: number) => string | undefined;
+/** A colour value the code writes at an offset of a file, as `#rrggbb[aa]`, and where it ends, when it does. */
+export type ColorReader = (source: SwiftSource, offset: number) => { hex: string; end?: number } | undefined;
+
+/** A colour a theme type sets, and where. */
+interface ThemeValue {
+  hex: string;
+  line: number;
+  start: number;
+  location?: ValueLocation;
+}
 
 export interface SwiftThemes {
   /** The default theme's colours, each known by its protocol's member (`ColorSet.tintColor`). */
@@ -43,16 +53,16 @@ interface ThemeType {
   theme: string;
   scheme?: "light" | "dark";
   source: SwiftSource;
-  colors: Map<string, { hex: string; line: number; start: number }>;
+  colors: Map<string, ThemeValue>;
 }
 
 /** The themes of every colour protocol whose conforming types include a light and a dark one; others, like
  * `PrimaryButton` and `SecondaryButton` sharing `ButtonColors`, are just types with colours. */
-export function swiftThemes(sources: SwiftSource[], valueAt: ValueAt): SwiftThemes {
+export function swiftThemes(sources: SwiftSource[], colorAt: ColorReader): SwiftThemes {
   const protocols = colorProtocols(sources);
   const byProtocol = new Map<string, ThemeType[]>();
   for (const source of sources) {
-    for (const type of themeTypes(source, protocols, valueAt)) {
+    for (const type of themeTypes(source, protocols, colorAt)) {
       const types = byProtocol.get(type.protocol);
       if (types) types.push(type);
       else byProtocol.set(type.protocol, [type]);
@@ -119,12 +129,16 @@ interface Conforming {
   protocol: string;
   members: Set<string>;
   scheme?: "light" | "dark";
-  found: { member: string; hex: string; start: number; line: number }[];
+  found: (ThemeValue & { member: string })[];
 }
 
 /** The structs in `source` conforming to a colour protocol, with the colours they set directly in their body. Each
  * member is read once, and given to the struct whose body it's directly in. */
-function themeTypes(source: SwiftSource, protocols: Map<string, string[]>, valueAt: ValueAt): ThemeType[] {
+function themeTypes(
+  source: SwiftSource,
+  protocols: Map<string, string[]>,
+  colorAt: ColorReader,
+): ThemeType[] {
   const tokens = tokensOf(source);
   const byBody = new Map<number, Conforming>();
   for (const struct of structs(source.code)) {
@@ -136,6 +150,7 @@ function themeTypes(source: SwiftSource, protocols: Map<string, string[]>, value
   if (byBody.size === 0) return [];
   const declarations: number[] = [];
   const found: Conforming["found"] = [];
+  const span = locator(source.rel, source.text);
   for (const m of source.code.matchAll(MEMBER)) {
     const declared = m.index ?? 0;
     const type = byBody.get(tokens.enclosing[tokenIndexAt(tokens, declared)] ?? -1);
@@ -145,11 +160,17 @@ function themeTypes(source: SwiftSource, protocols: Map<string, string[]>, value
     SCHEME_VALUE.lastIndex = start;
     const scheme = SCHEME_MEMBER.test(member) ? SCHEME_VALUE.exec(source.code)?.[1] : undefined;
     if (scheme === "light" || scheme === "dark") type.scheme = scheme;
-    const hex = type.members.has(member)
-      ? (valueAt(source, start) ?? fixedColor(source.code, start))
+    const read = type.members.has(member)
+      ? (colorAt(source, start) ?? fixedColor(source.code, start))
       : undefined;
-    if (!hex) continue;
-    const value = { member, hex, start, line: 1 };
+    if (!read) continue;
+    const value: ThemeValue & { member: string } = {
+      member,
+      hex: read.hex,
+      start,
+      line: 1,
+      ...(read.end ? { location: valueAt(span(start, read.end), "expression") } : {}),
+    };
     type.found.push(value);
     found.push(value);
     declarations.push(declared);
@@ -178,10 +199,11 @@ function themeType(source: SwiftSource, { name, protocol, scheme, found }: Confo
 
 /** A platform colour that is the same in every scheme, `.white`, written at `offset` and not changed after
  * (`.white.opacity(0.5)`). */
-function fixedColor(code: string, offset: number): string | undefined {
+function fixedColor(code: string, offset: number): { hex: string; end: number } | undefined {
   FIXED.lastIndex = offset;
   const name = FIXED.exec(code)?.[1];
-  return name ? FIXED_VALUES[name] : undefined;
+  const hex = name ? FIXED_VALUES[name] : undefined;
+  return hex ? { hex, end: FIXED.lastIndex } : undefined;
 }
 
 /** Each theme with its light and dark type, in the order the code declares them; a type with no scheme is light. */
@@ -208,6 +230,7 @@ function themeColors(
     const first = lightValue ?? darkValue;
     const type = lightValue ? light : dark;
     if (!first || !type) return [];
+    const darkAt = lightValue && darkValue?.location;
     return [
       {
         name: member,
@@ -217,6 +240,10 @@ function themeColors(
         reference: `${protocol}.${member}`,
         line: first.line,
         kind: "code",
+        ...withLocations({
+          ...(first.location && { light: first.location }),
+          ...(darkAt && { dark: darkAt }),
+        }),
       },
     ];
   });

@@ -8,6 +8,7 @@ import type { NamedColor } from "../scan/palette.js";
 import { type ColorLookup, colorValue } from "./compose-color-values.js";
 import { type Argument, assignedName, callArguments, isDeclared, Spans } from "./kotlin-calls.js";
 import type { KotlinSource } from "./kotlin-sources.js";
+import { withLocations } from "./value-locations.js";
 
 /** The Material calls that build a colour scheme, and how the code then reads a role from it. */
 const SCHEMES: Record<string, { dark: boolean; access: string }> = {
@@ -101,16 +102,20 @@ function paletteColors(
     return arg && palette ? colorValue(palette.source, arg.at, arg.at + arg.value.length, known) : undefined;
   };
   return fields.flatMap((field) => {
-    const hex = colorIn(light, field);
-    if (!hex) return [];
+    const day = colorIn(light, field);
+    if (!day) return [];
     const night = colorIn(dark, field);
     const color: NamedColor = {
       name: field,
-      light: hex,
-      ...(night && night !== hex && { dark: night }),
+      light: day.hex,
+      ...(night && night.hex !== day.hex && { dark: night.hex }),
       source: light.source.rel,
       reference: `${access}.${field}`,
       kind: "code",
+      ...withLocations({
+        ...(day.location && { light: day.location }),
+        ...(night?.location && { dark: night.location }),
+      }),
     };
     return [{ color, source: light.source }];
   });
