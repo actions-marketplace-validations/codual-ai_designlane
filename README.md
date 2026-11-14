@@ -31,12 +31,14 @@ Needs Node 22 or later. In your app's repo:
 npx designmap .
 ```
 
-That's it. You get two files:
+That's it. You get four files:
 
 ```
 designmap/
 ├── tokens.json   the design system the code names, as W3C design tokens: what your design tool syncs
-└── DESIGN.md     the full report: every colour, text style, spacing and corner radius, with where each is used
+├── DESIGN.md     the full report: every colour, text style, spacing and corner radius, with where each is used
+├── catalog.html  one page with the colours, text styles and every component, to open or send to a designer
+└── drift.md      where the UI code writes values the design system already has
 ```
 
 Then keep your design file in step:
@@ -92,6 +94,28 @@ system as swatches and type samples.
 | Two apps, one repo | An iPhone and an Android app in one repo each get their own design system |
 | The full picture | `DESIGN.md` lists every value the code uses and the app's screens (for SwiftUI and Compose, how they open each other too) |
 | Design context for agents | An agent can ask for the design system while it codes: `claude mcp add designmap -- npx designmap mcp .` |
+| A component catalog | `catalog.html`: the colours light and dark, text styles, spacing, corner radii and every component, with its file, uses, parameters and the tokens it uses |
+| Drift | `drift.md`: colours written as values (with the named colour to use), spacing and corners off the scale the code uses, text styles written in place, near-duplicate components |
+
+## Component catalog
+
+`designmap/catalog.html` is one page that opens offline in any browser, in light or dark: the app's colours (light
+and dark, and each theme), text styles, the spacing and corner radii the code uses, and every component and screen.
+Each component shows its kind (a button, a row, a card…), where it's declared, how often other code uses it, its
+parameters as the code writes them (`title: String`), and the colours and text styles it uses. When two components
+share a name, each use counts for the one declared nearest (the same file, else the same folder), and a use as near
+both is shown as possibly either. Search and filter by kind at the top.
+
+Your coding agent can add a picture of each component. With the MCP server connected, ask it to *"draw my components
+for the Designmap catalog"*: it finds them with `find_components`, reads each with `get_component`, draws it in HTML
+with the app's own colours, and saves it with `save_preview`, which updates the catalog. Pictures are plain HTML and
+styles only, no scripts or links, and show in a sandbox; when a component's code changes, its card says the picture is
+out of date. Use `--no-write` to see what Designmap finds without writing any file.
+
+`designmap/drift.md` lists where the UI code skips the design system, each with its file and line, and the agent can
+check its own changes with `check_drift`. Designmap names a colour or text style to use when one matches; for spacing
+and corners it says which value the code uses often nearby, since it doesn't read named spacing tokens. Theme and
+token files (`Theme.kt`, `AppColors.swift`, `theme/`) and previews are left out, as values belong there.
 
 ## Unusual setup? Let your coding agent read it
 

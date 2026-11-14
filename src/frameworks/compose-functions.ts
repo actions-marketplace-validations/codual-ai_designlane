@@ -23,7 +23,7 @@ const MAX_RETURN_TYPE = 200;
 const FUNCTION = /^[^{}=;]*?\bfun\s+(?:<[^>]*>\s*)?(?:[\w.<>?]+\.)?([A-Z]\w*)\s*\(/;
 /** Previews show a view in the IDE and aren't part of the app: `@Preview`, `@PreviewLightDark`, an app's own
  * `@DevicePreviews`. */
-const PREVIEW = /@(?:\w+\.)*\w*Preview\w*/;
+export const PREVIEW = /@(?:\w+\.)*\w*Preview\w*/;
 /** How far back the annotations stacked above `@Composable` are read, for a preview written before it. */
 const MAX_ANNOTATIONS = 200;
 

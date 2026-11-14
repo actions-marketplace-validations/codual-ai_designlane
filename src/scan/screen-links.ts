@@ -3,12 +3,11 @@
 
 import type { ViewLink, ViewPlacement } from "../frameworks/plugin.js";
 import { distinctBy, viewKey } from "../frameworks/view-links.js";
+import { byCode } from "./counting.js";
 import type { ScreenLink, ScreenRef } from "./types.js";
 
 /** How many parts deep a link's view may sit inside the screen credited with it. */
 const MAX_LEVELS = 4;
-
-const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 export function screenLinks(
   screens: ScreenRef[],
@@ -61,7 +60,7 @@ export function screenLinks(
     return screens.map((screen) => ({ ...base, from: screen.id, via: from.id }));
   });
   credited.sort(
-    (a, b) => byText(a.from, b.from) || byText(a.to, b.to) || byText(a.file, b.file) || a.line - b.line,
+    (a, b) => byCode(a.from, b.from) || byCode(a.to, b.to) || byCode(a.file, b.file) || a.line - b.line,
   );
   // One link per pair of views and way of opening, as in each framework's own links: two parts of a screen opening
   // the same page are two places in the code, kept apart by `via`.

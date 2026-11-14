@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { FrameworkId, ScanResult } from "../scan/types.js";
 import { toDesignMd } from "./design-md.js";
+import { writeReports } from "./reports.js";
 import { toDesignTokens } from "./tokens-json.js";
 
 /** Where the outputs go inside the app, unless told otherwise. */
@@ -20,8 +21,9 @@ export const APP_TOKENS_FILES: Record<FrameworkId, string> = {
 };
 
 /**
- * Writes the tokens and DESIGN.md into `outDir` (by default `designmap/` in the app) and returns their paths: one
- * tokens.json, or for a repo with more than one app a file for each (`tokens.ios.json`) beside one DESIGN.md. A tokens
+ * Writes the tokens, DESIGN.md, catalog.html and drift.md into `outDir` (by default `designmap/` in the app) and
+ * returns their paths: one tokens.json, or for a repo with more than one app a file for each (`tokens.ios.json`)
+ * beside one of each of the others. A tokens
  * file Designmap wrote before in the other layout is removed and returned once the new ones are written, so a Figma
  * file still connected to it fails plainly rather than syncing values the code no longer has; a scan that couldn't
  * read the whole app removes nothing, since an app it missed isn't an app removed.
@@ -49,7 +51,7 @@ export async function writeOutputs(scan: ScanResult, outDir = path.join(scan.roo
     await rm(file);
     removed.push(file);
   }
-  return { tokens, design, removed };
+  return { tokens, design, ...(await writeReports(scan, outDir)), removed };
 }
 
 /** What every tokens file Designmap writes carries, and a file of anyone else's doesn't. */

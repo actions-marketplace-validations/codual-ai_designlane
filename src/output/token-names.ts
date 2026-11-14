@@ -1,5 +1,6 @@
 /** What tokens.json and DESIGN.md call each value, worked out once so both files name every token the same way. */
 
+import { byCode } from "../scan/counting.js";
 import type { ColorTheme, ColorToken, Platform, TypeStyle } from "../scan/types.js";
 
 /** A token's key: the app's own name, or `hex-33a854` for a colour the code never names. Anything but letters,
@@ -34,9 +35,6 @@ export interface KeyedColor {
   /** The key of its dark value, when it has one. */
   darkKey?: string;
 }
-
-/** Code-unit order, the same on every machine (unlike `localeCompare`, which follows the system's language). */
-const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * Each item with its key: its own name, or, when several items share one, the way the code refers to each
@@ -113,7 +111,7 @@ const WEIGHT_NUMBERS: Record<string, number> = {
  * written in place. */
 export const isNamedStyle = (style: TypeStyle) => style.kind === "app" || style.kind === "text-style";
 
-/** A text style's key: the app's own name (`senbaCaption`, `headline`), or a description made into one
+/** A text style's key: the app's own name (`brandCaption`, `headline`), or a description made into one
  * (`System 15 semibold` is `system-15-semibold`; `System, computed size semibold` is `system-semibold`). */
 function typeStyleKey(style: TypeStyle): string {
   if (isNamedStyle(style)) return tokenKey(style.name);

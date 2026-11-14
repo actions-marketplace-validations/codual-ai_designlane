@@ -36,6 +36,26 @@ describe("designmap [dir]", () => {
     ).toBeDefined();
   });
 
+  it("writes catalog.html and drift.md beside them", async () => {
+    const root = await tempDir(APP);
+    const { out } = await designmap(root);
+    const catalog = await readFile(path.join(root, "designmap", "catalog.html"), "utf8");
+    expect(catalog).toContain("<b>brand</b>");
+    expect(catalog).toContain('<span class="name">Home</span>');
+    expect(await readFile(path.join(root, "designmap", "drift.md"), "utf8")).toContain("# Design drift");
+    expect(out).toContain(path.join(root, "designmap", "catalog.html"));
+    expect(out).toContain(path.join(root, "designmap", "drift.md"));
+  });
+
+  it("prints what it found and writes nothing with --no-write", async () => {
+    const root = await tempDir(APP);
+    const { code, out } = await designmap(root, "--no-write");
+    expect(code).toBe(0);
+    expect(out).toContain("1 colour, 0 text styles");
+    expect(out).not.toContain("Wrote");
+    await expect(stat(path.join(root, "designmap"))).rejects.toThrow(/ENOENT/);
+  });
+
   it("names the app's other themes, when it has some", async () => {
     const set = (name: string, hex: string) =>
       `struct ${name}: ColorSet { var tint: Color = Color(hex: 0x${hex}) }`;

@@ -5,6 +5,7 @@
  */
 
 import path from "node:path";
+import { plural } from "../scan/counting.js";
 import { weightLabel } from "../scan/type-scale.js";
 import { FRAMEWORK_NAMES, type FrameworkScan, type ScanResult, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
 import { linkNotes, namedLinks, OPENING_WORDS } from "./screen-links.js";
@@ -39,7 +40,6 @@ function yaml(obj: Yaml, indent = ""): string {
     .join("\n");
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const px = (n: number) => `${n}px`;
 
 /** Names listed in prose, with how many more there are. */

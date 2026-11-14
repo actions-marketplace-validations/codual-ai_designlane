@@ -4,6 +4,18 @@
  * comments and strings end.
  */
 
+/** `code` with each `[start, end)` of `ranges` replaced by spaces, keeping newlines and offsets. */
+export function blankRanges(code: string, ranges: Iterable<readonly [number, number]>): string {
+  const out = code.split("");
+  // Each character once, however the ranges nest or overlap.
+  let done = 0;
+  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    for (let k = Math.max(start, done); k < end; k++) if (out[k] !== "\n") out[k] = " ";
+    done = Math.max(done, end);
+  }
+  return out.join("");
+}
+
 /** Where the comment or string starting at `i` ends, or undefined when none starts there. */
 export type CommentOrStringEnd = (text: string, i: number) => number | undefined;
 

@@ -11,7 +11,7 @@ import type { FrameworkId, ScanResult, ScreenRef } from "./types.js";
 
 const frameworks: readonly FrameworkPlugin[] = [swiftui, compose, reactNative];
 
-async function createContext(root: string): Promise<ScanContext> {
+export async function createContext(root: string): Promise<ScanContext> {
   const abs = path.resolve(root);
   const { files, truncated, unreadable } = await listFiles(abs);
   return { root: abs, files, truncated, unreadable, read: (file: SourceFile) => readText(file.abs) };

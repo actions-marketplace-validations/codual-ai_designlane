@@ -40,7 +40,7 @@ type Modes = SyncModes & { light: string };
 export interface ApplyOptions {
   /** The collections to try again to add the Dark mode to that they couldn't take before. */
   retryDark: DarkUnavailable;
-  /** The app's name, which names a new collection: "Rummy (Designmap)", "Rummy · Desert (Designmap)". */
+  /** The app's name, which names a new collection: "Shop (Designmap)", "Shop · Desert (Designmap)". */
   app?: string;
   /** The platform the app's code is for, whose code syntax shows how the code refers to each variable. */
   platform?: Platform;

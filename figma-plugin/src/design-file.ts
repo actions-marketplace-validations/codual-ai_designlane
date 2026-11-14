@@ -27,13 +27,13 @@ export const KEYS = {
 export const SYNCED_COLLECTION = "tokens";
 export const THEME_COLLECTION = "theme";
 
-/** The app's name as a title, `Rummy`; a name already capitalized, like `SenbaFold`, is kept. */
+/** The app's name as a title, `Shop`; a name already capitalized, like `ShopKit`, is kept. */
 export const appTitle = (app: string) => `${app.charAt(0).toUpperCase()}${app.slice(1)}`;
 
-/** What Designmap names what it makes for an app: "Rummy (Designmap)". */
+/** What Designmap names what it makes for an app: "Shop (Designmap)". */
 export const designmapName = (app: string | undefined) =>
   app ? `${appTitle(app)} (Designmap)` : "Designmap";
-/** What Designmap names the collection of one of an app's other themes: "Rummy · Desert (Designmap)". */
+/** What Designmap names the collection of one of an app's other themes: "Shop · Desert (Designmap)". */
 export const themeCollectionName = (app: string | undefined, theme: string) =>
   designmapName(app ? `${appTitle(app)} · ${theme}` : theme);
 

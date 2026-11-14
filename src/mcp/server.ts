@@ -5,41 +5,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toDesignMd } from "../output/design-md.js";
 import { linkNotes, type NamedLink, namedLinks, OPENING_WORDS } from "../output/screen-links.js";
-import { isFolder, readGaps } from "../scan/files.js";
-import { scanRepo } from "../scan/index.js";
-import { scanNotes } from "../scan/notes.js";
-import { type ScanResult, type ScreenRef, SUPPORTED_FRAMEWORKS } from "../scan/types.js";
+import type { ScanResult, ScreenRef } from "../scan/types.js";
+import { MAX_LISTED, withApp } from "./app.js";
+import { registerComponentTools } from "./component-tools.js";
+import { registerDriftTool } from "./drift-tool.js";
 
 const INSTRUCTIONS = `Designmap reads this app's design system from its code.
 When you build or change UI in this app:
 1. Call get_design_system first. Prefer the app's most used colours, text styles, spacing and corner radii over new values.
 2. Write values the way the app's code does. A token name is only a label: before using a name in code, search the code for it. If it isn't there (like hex-33a854 or system-15-semibold), write the value itself, in the app's own style.
-3. Call find_views before creating a view, and reuse an existing component when one fits.
+3. Call find_components before creating a view, and reuse an existing component when one fits; get_component shows its code and parameters.
 4. Call get_screen_links before adding or changing navigation, to open screens the way the app already does.
+5. After writing UI code, call check_drift with the files you changed, and fix what it lists.
+To add pictures to the catalog (designmap/catalog.html), read a component with get_component, then draw it with save_preview.
 If a tool says only part of the app was read, its lists are incomplete.`;
-
-/** How many views or links a tool lists; a narrower query shows the rest. */
-const MAX_LISTED = 40;
-
-type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-const text = (t: string): Result => ({ content: [{ type: "text", text: t }] });
-const failure = (t: string): Result => ({ isError: true, ...text(t) });
-
-/** Every tool's one way in: reads the app the call names, notes when only part of it could be read, and turns any
- * failure into a message the agent can act on. */
-async function withApp(root: string, answer: (scan: ScanResult) => string): Promise<Result> {
-  try {
-    if (!(await isFolder(root))) return failure(`Not a folder: ${root}. Pass the app's folder as repo.`);
-    const scan = await scanRepo(root);
-    const gaps = [readGaps(scan), ...scanNotes(scan)].filter(Boolean).join(" ");
-    if (!scan.frameworks.length)
-      return failure([`No ${SUPPORTED_FRAMEWORKS} code found in ${root}.`, gaps].filter(Boolean).join(" "));
-    return text(`${gaps ? `${gaps}\n\n` : ""}${answer(scan)}`);
-  } catch (e) {
-    return failure(`Designmap couldn't read ${root}: ${e instanceof Error ? e.message : String(e)}`);
-  }
-}
 
 const listed = (v: ScreenRef) => `- ${v.name} (${v.kind}) ${v.file}:${v.line}`;
 
@@ -104,6 +83,8 @@ export function createServer(defaultRoot: string, version: string): McpServer {
     ({ repo: r, query }) => withApp(rootOf(r), (scan) => screenLinks(scan, query)),
   );
 
+  registerComponentTools(server, repo, rootOf);
+  registerDriftTool(server, repo, rootOf);
   return server;
 }
 

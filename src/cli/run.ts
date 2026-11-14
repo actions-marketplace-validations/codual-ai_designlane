@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { writeOutputs } from "../output/write.js";
 import { mergeAgentTokens } from "../scan/agent-tokens.js";
+import { plural } from "../scan/counting.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import { scanRepo } from "../scan/index.js";
 import { scanNotes } from "../scan/notes.js";
@@ -12,7 +13,8 @@ import { AGENT_PROMPT } from "./agent-prompt.js";
 const HELP = `designmap: map a mobile app's design system from its code
 
 Usage
-  designmap [dir]   Read the app in dir (default: here) and write designmap/tokens.json and designmap/DESIGN.md
+  designmap [dir]   Read the app in dir (default: here) and write tokens.json, DESIGN.md, catalog.html and drift.md
+                    into designmap/
   designmap mcp [dir]
                     Run the MCP server, so a coding agent reads the app's design system while it builds
   designmap prompt  Print instructions for a coding agent to read the app's design system into designmap/agent.json
@@ -27,6 +29,7 @@ Add to Claude Code
 Options
   --out <dir>       Write the files here instead
   --json            Print the whole scan as JSON instead of writing files
+  --no-write        Print what was found, and write nothing
   --from-agent <file>
                     Add the colours and text styles a coding agent read (see prompt), those the code bears out
   -v, --version
@@ -77,7 +80,7 @@ async function appFolder(folders: string[]): Promise<string> {
 /** Reads the app and writes tokens.json and DESIGN.md, or prints the scan with `--json`. */
 async function map(
   root: string,
-  values: { out?: string; json?: boolean; "from-agent"?: string },
+  values: { out?: string; json?: boolean; "no-write"?: boolean; "from-agent"?: string },
   { out, error }: Output,
 ): Promise<number> {
   let scan = await scanRepo(root);
@@ -101,8 +104,10 @@ async function map(
   if (scan.frameworks.length === 0)
     throw new UsageError(`no ${SUPPORTED_FRAMEWORKS} code found in ${scan.root}`, 1);
   out(summary(scan));
+  if (values["no-write"]) return 0;
   const written = await writeOutputs(scan, values.out ? path.resolve(values.out) : undefined);
-  out(`Wrote ${[...written.tokens, written.design].map(shown).join("\n      ")}`);
+  const files = [...written.tokens, written.design, written.catalog, written.drift];
+  out(`Wrote ${files.map(shown).join("\n      ")}`);
   if (written.removed.length) {
     const now = written.tokens.map(shown).join(" or ");
     error(
@@ -143,6 +148,7 @@ function parse(argv: string[]) {
       options: {
         out: { type: "string" },
         json: { type: "boolean" },
+        "no-write": { type: "boolean" },
         "from-agent": { type: "string" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -157,8 +163,6 @@ function done(out: Output["out"], text: string): number {
   out(text);
   return 0;
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** What was found, in a few lines. */
 function summary(scan: ScanResult): string {

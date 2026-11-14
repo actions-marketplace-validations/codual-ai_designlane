@@ -24,9 +24,9 @@ describe("the design system page", () => {
   it("is named after the app, with a swatch linked to each colour's variable in Light and in Dark", async () => {
     const app = plugin();
     await app.sync(
-      tokensJson({ app: "rummy", colors: [{ key: "surface", hex: "#18191c", dark: "#ffffff" }] }),
+      tokensJson({ app: "shop", colors: [{ key: "surface", hex: "#18191c", dark: "#ffffff" }] }),
     );
-    expect(pages(app).map((page) => page.name)).toEqual(["Rummy (Designmap)"]);
+    expect(pages(app).map((page) => page.name)).toEqual(["Shop (Designmap)"]);
     const surface = variableNamed(app.fake, "color/surface");
     const chips = sheetOf(app)
       .descendants()

@@ -157,7 +157,7 @@ const isDefault = (node: ts.FunctionDeclaration | ts.ClassDeclaration) =>
 
 /** The function a component's variable holds: itself, or one a higher-order component wraps (`memo(…)`,
  * `withNavigation(…)`, `connect(…)(…)`); never one a call like `items.map(…)` is given. */
-function componentFunction(node: ts.Expression): ts.SignatureDeclaration | undefined {
+export function componentFunction(node: ts.Expression): ts.SignatureDeclaration | undefined {
   const value = unwrapped(node);
   if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) return value;
   if (!ts.isCallExpression(value)) return undefined;

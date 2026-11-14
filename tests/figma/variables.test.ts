@@ -52,10 +52,10 @@ describe("syncing variables into a Figma file", () => {
   it("names its collection after the app, and groups colours the code doesn't name", async () => {
     const app = plugin();
     await app.sync(
-      tokensJson({ app: "rummy", colors: [{ key: "hex-33a854", hex: "#33a854", named: false }] }),
+      tokensJson({ app: "shop", colors: [{ key: "hex-33a854", hex: "#33a854", named: false }] }),
     );
     expect([onlyCollection(app.fake).name, [...app.fake.variables.values()].map((v) => v.name)]).toEqual([
-      "Rummy (Designmap)",
+      "Shop (Designmap)",
       ["color/Unnamed/33a854"],
     ]);
   });

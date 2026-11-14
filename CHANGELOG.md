@@ -3,6 +3,26 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `designmap/catalog.html`: one offline page, light and dark, with the app's colours (and each theme's), text styles,
+  the spacing and corner radii the code uses, and every component and screen with its kind, file, uses, parameters
+  and the colours and text styles it uses, searchable and filterable by kind.
+- Pictures of components drawn by a coding agent: the MCP tools `find_components`, `get_component` and
+  `save_preview`. Pictures are HTML and styles only (no scripts, event handlers or external URLs), saved in
+  `designmap/previews/`, shown in a sandbox, and marked out of date when the component's code changes.
+- `designmap/drift.md` and the MCP tool `check_drift`: colours written as values (with the named colour to use when
+  one matches), spacing and corner values off the scale the code uses, text styles written in place that a named one
+  matches, and near-duplicate components (same-named copies too), each with where it is. Theme and token files and
+  previews are left out.
+- `--no-write`: print what was found, and write no file.
+
+### Changed
+
+- Library: `writeOutputs` also writes catalog.html and drift.md, and returns their paths as `catalog` and `drift`.
+
 ## 0.1.0 - 2026-11-14
 
 ### Added
@@ -14,7 +34,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - Apps with several themes: each theme beside the default one is read with its own colours, Light and Dark, and
   written under `theme` in tokens.json, keyed by its name (old files without it read as before). The Figma plugin
-  makes a collection for each, "Rummy · Desert (Designmap)", matching, renaming and deprecating a theme's
+  makes a collection for each, "Shop · Desert (Designmap)", matching, renaming and deprecating a theme's
   variables only within it, and DESIGN.md lists each theme's colours. SwiftUI: types conforming to one protocol of
   colours, paired light and dark by name or a `scheme` member (types with neither stay plain colours), each
   colour known by the protocol's member (`ColorSet.tintColor`); the first theme declared is the default. React

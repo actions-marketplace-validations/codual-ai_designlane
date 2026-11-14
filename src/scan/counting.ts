@@ -11,6 +11,8 @@ export function mostCommon<T>(
 }
 
 export const byText = (a: string, b: string) => a.localeCompare(b);
+/** Code-unit order, the same on every machine (unlike `localeCompare`, which follows the system's language). */
+export const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export const byNumber = (a: number, b: number) => a - b;
 
 /** `items` grouped by `keyOf`, each group in the items' order. */
@@ -24,3 +26,6 @@ export function groupBy<T, K>(items: Iterable<T>, keyOf: (item: T) => K): Map<K,
   }
   return groups;
 }
+
+/** `n` with the word for one or for many: `1 use`, `2 uses`. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

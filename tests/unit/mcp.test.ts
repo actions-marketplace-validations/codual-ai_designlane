@@ -1,4 +1,4 @@
-import { chmod } from "node:fs/promises";
+import { chmod, readFile } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -43,7 +43,99 @@ describe("MCP server", () => {
       ["get_design_system", true],
       ["find_views", true],
       ["get_screen_links", true],
+      ["find_components", true],
+      ["get_component", true],
+      ["save_preview", false],
+      ["check_drift", true],
     ]);
+  });
+
+  describe("components", () => {
+    const SHOP = {
+      ...APP,
+      "App/Home.swift": [
+        "import SwiftUI",
+        "struct Home: View {",
+        "  var body: some View { NavigationStack { List { PriceRow(price: p); PriceRow(price: q) }.navigationTitle(t).tint(Theme.brand) } }",
+        "}",
+        "struct PriceRow: View { let price: String; var body: some View { Text(price).foregroundStyle(Theme.brand) } }",
+      ].join("\n"),
+      "App/Other.swift":
+        "import SwiftUI\nstruct Banner: View { var body: some View { Text(t) } }\nstruct Wrap: View { var body: some View { Banner() } }",
+      "App/More.swift": "import SwiftUI\nstruct Banner: View { var body: some View { Text(u) } }",
+    };
+
+    it("finds components by name or category, most used first, with their uses and parameters", async () => {
+      const client = await connect(await tempDir(SHOP));
+      expect((await call(client, "find_components", { query: "row" })).text).toBe(
+        "1 component:\n- PriceRow (list, SwiftUI) App/Home.swift:5 · used 2× · price: String",
+      );
+      expect((await call(client, "find_components", { category: "card" })).text).toContain(
+        "2 components:\n- Banner (card",
+      );
+      expect((await call(client, "find_components", { query: "home" })).text).toBe("No matching components.");
+      expect((await call(client, "find_components", { query: "home", includeScreens: true })).text).toContain(
+        "- Home (screen, SwiftUI)",
+      );
+    });
+
+    it("gives a component's code, parameters and colours, with how to draw it", async () => {
+      const { text, isError } = await call(await connect(await tempDir(SHOP)), "get_component", {
+        name: "PriceRow",
+      });
+      expect(isError).toBe(false);
+      expect(text).toContain("PriceRow · list · SwiftUI · App/Home.swift:5");
+      expect(text).toContain("Parameters: price: String\nColours: brand\n");
+      expect(text).toContain("```\nstruct PriceRow: View {");
+      expect(text).toContain("Picture: none yet. Draw it as one HTML fragment");
+      expect(text).toContain("CSS variables: --color-brand (#3366e6)");
+    });
+
+    it("asks for the file when two components share a name", async () => {
+      const client = await connect(await tempDir(SHOP));
+      expect(await call(client, "get_component", { name: "Banner" })).toEqual({
+        isError: true,
+        text: "2 components are named Banner: pass file (App/Other.swift, App/More.swift).",
+      });
+      expect(
+        (await call(client, "get_component", { name: "Banner", file: "./App/More.swift" })).text,
+      ).toContain("App/More.swift:2");
+      expect((await call(client, "get_component", { name: "Nope" })).isError).toBe(true);
+    });
+
+    it("saves a picture and rebuilds the catalog with it, refusing one with a script", async () => {
+      const root = await tempDir(SHOP);
+      const client = await connect(root);
+      const refused = await call(client, "save_preview", { name: "PriceRow", html: "<script>x</script>" });
+      expect(refused).toEqual({
+        isError: true,
+        text: "Remove scripts and event handlers: previews are still pictures.",
+      });
+      const saved = await call(client, "save_preview", { name: "PriceRow", html: "<b>$4.99</b>" });
+      expect(saved.text).toMatch(
+        /^Saved designmap\/previews\/PriceRow-[0-9a-f]{8}\.html, and updated designmap\/catalog\.html\.$/,
+      );
+      const catalog = await readFile(path.join(root, "designmap", "catalog.html"), "utf8");
+      expect(catalog).toContain('sandbox="" loading="lazy" srcdoc="');
+      expect(catalog).toContain("&lt;b&gt;$4.99&lt;/b&gt;");
+      expect((await call(client, "find_components", { query: "row" })).text).toContain("· has a picture");
+      expect((await call(client, "get_component", { name: "PriceRow" })).text).toContain("Picture: saved.");
+    });
+
+    it("checks drift, in just the files named when given", async () => {
+      const root = await tempDir({
+        ...SHOP,
+        "App/Promo.swift":
+          "import SwiftUI\nstruct Promo: View { var body: some View { Text(t).foregroundStyle(Color(red: 0.2, green: 0.4, blue: 0.9)) } }",
+      });
+      const client = await connect(root);
+      expect((await call(client, "check_drift")).text).toBe(
+        "Colours written as values:\n- #3366e6 → use Theme.brand · App/Promo.swift:2",
+      );
+      expect((await call(client, "check_drift", { files: ["App/Home.swift"] })).text).toBe(
+        "No drift in these files.",
+      );
+    });
   });
 
   it("hands over the design system as a DESIGN.md", async () => {

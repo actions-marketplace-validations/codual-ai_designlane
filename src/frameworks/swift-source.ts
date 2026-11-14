@@ -6,6 +6,7 @@
 import {
   type BracketTree,
   blankCommentsAndStrings,
+  blankRanges,
   bracketTree,
   identifierBefore,
   skipSpaceBack,
@@ -92,12 +93,7 @@ function interpolationEnd(text: string, open: number, depth: number): number {
 }
 
 /** Blanks every `#Preview { … }` block, so views declared inside previews are ignored. */
-export function withoutPreviews(code: string): string {
-  const out = code.split("");
-  for (const [start, end] of previewRanges(code))
-    for (let k = start; k < end; k++) if (out[k] !== "\n") out[k] = " ";
-  return out.join("");
-}
+export const withoutPreviews = (code: string) => blankRanges(code, previewRanges(code));
 
 /** Where each `#Preview { … }` block starts and ends (exclusive), in order, given blanked code (see `codeOnly`). */
 export function previewRanges(code: string): [number, number][] {
