@@ -67,13 +67,24 @@ const groupOf = <T extends z.ZodType>(token: T) =>
       "only a group's $description is text; every other entry is a token",
     );
 
+/** One of the app's themes beside its default one: its name as the code gives it, which a sync knows it by, and its
+ * colours, each with its dark value as the default theme's have. */
+export const ThemeGroup = z
+  .object({
+    $description: z.string().optional(),
+    $extensions: z.object({ designmap: z.object({ name: z.string() }).strict() }),
+    color: groupOf(ColorTokenEntry),
+  })
+  .strict();
+
 /** One app's tokens. Strict, so a file shaped otherwise (a group per framework) is refused rather than read as empty,
- * which would deprecate everything. */
+ * which would deprecate everything. `color` is the default theme's; `theme` holds the others. */
 export const TokensFile = z
   .object({
     $description: z.string(),
     $extensions: FileExtensions.optional(),
     color: groupOf(ColorTokenEntry).optional(),
+    theme: groupOf(ThemeGroup).optional(),
     typography: groupOf(TextStyleGroup).optional(),
     fontFamily: groupOf(FontFamilyToken).optional(),
     spacing: groupOf(DimensionToken).optional(),

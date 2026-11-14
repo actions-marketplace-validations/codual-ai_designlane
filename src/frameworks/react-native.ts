@@ -130,13 +130,11 @@ export const reactNative: FrameworkPlugin = {
     const folders = expoRouteFolders(all, sources);
     return {
       views: rnViews(sources, { folders }, new Set(all.flatMap((p) => p.depends))),
-      ...(theme.otherThemes.length > 0 && { otherThemes: theme.otherThemes }),
       tokens: {
         ...palette({
+          ...theme,
           named: [...tailwind.named, ...theme.named.filter((c) => !inTailwind.has(`${c.name}|${c.light}`))],
           references: [...theme.references, ...tailwind.references],
-          literals: theme.literals,
-          system: theme.system,
         }),
         typeStyles: [...type.named, ...fontSizes, ...scale.typeStyles].sort(
           (a, b) => b.uses - a.uses || a.name.localeCompare(b.name),

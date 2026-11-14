@@ -4,7 +4,7 @@
  */
 
 import { numberLabel } from "../output/token-names.js";
-import type { Rgba, SyncTokens, TextValue } from "./tokens-file.js";
+import type { Rgba, SyncColor, SyncTheme, SyncTokens, TextValue } from "./tokens-file.js";
 
 /** A value a variable holds: a colour (light, and dark when it has one) or a number. */
 export type VariableValue = { light: Rgba; dark?: Rgba } | number;
@@ -18,10 +18,19 @@ export interface DesignFileEntry<V> {
   deprecated: boolean;
 }
 
+/** The variables a design file has for one of the app's other themes, by the theme's name. */
+export interface DesignFileTheme {
+  theme: string;
+  variables: DesignFileEntry<VariableValue>[];
+}
+
 export interface DesignFile {
+  /** The default theme's colours, and spacing and radii a file synced before they left tokens.json may hold. */
   variables: DesignFileEntry<VariableValue>[];
   /** A design file's text style always has a family, size and weight. */
   textStyles: DesignFileEntry<Required<TextValue>>[];
+  /** Missing on a file that has no other theme, or one read before themes were synced. */
+  themes?: DesignFileTheme[];
 }
 
 /** A token from the code: what it's recognised by, the name it gets when first made, and its value. */
@@ -48,9 +57,17 @@ export interface Plan<V> {
   unchanged: number;
 }
 
+/** What a sync changes in one of the app's other themes, which a design file keeps apart from the default one. */
+export interface ThemePlan {
+  theme: string;
+  variables: Plan<VariableValue>;
+}
+
 export interface SyncPlan {
   variables: Plan<VariableValue>;
   textStyles: Plan<TextValue>;
+  /** Each theme the code or the design file has: those only in the file are planned with nothing left in the code. */
+  themes: ThemePlan[];
 }
 
 /** The group for colours the code uses without naming them, so a designer sees them apart from the named ones. */
@@ -58,14 +75,7 @@ const UNNAMED = "Unnamed";
 
 export function planSync(tokens: SyncTokens, file: DesignFile): SyncPlan {
   const variables: CodeToken<VariableValue>[] = [
-    ...tokens.colors.map((c) => ({
-      identity: c.identity,
-      name: c.identity.startsWith("color:#")
-        ? `color/${UNNAMED}/${c.key.replace(/^hex-/, "")}`
-        : `color/${c.key}`,
-      value: c.dark ? { light: c.light, dark: c.dark } : { light: c.light },
-      ...(c.reference ? { reference: c.reference } : {}),
-    })),
+    ...tokens.colors.map(colorToken),
     ...tokens.spacing.map((n) => ({ identity: `spacing:${n}`, name: `spacing/${numberLabel(n)}`, value: n })),
     ...tokens.radii.map((n) => ({ identity: `radius:${n}`, name: `radius/${numberLabel(n)}`, value: n })),
   ];
@@ -78,7 +88,31 @@ export function planSync(tokens: SyncTokens, file: DesignFile): SyncPlan {
   return {
     variables: plan(variables, file.variables, sameVariable, tokens.complete),
     textStyles: plan(textStyles, file.textStyles, sameText, tokens.complete),
+    themes: themePlans(tokens.themes ?? [], file.themes ?? [], tokens.complete),
   };
+}
+
+const colorToken = (c: SyncColor): CodeToken<VariableValue> => ({
+  identity: c.identity,
+  name: c.identity.startsWith("color:#")
+    ? `color/${UNNAMED}/${c.key.replace(/^hex-/, "")}`
+    : `color/${c.key}`,
+  value: c.dark ? { light: c.light, dark: c.dark } : { light: c.light },
+  ...(c.reference ? { reference: c.reference } : {}),
+});
+
+/** Each theme planned on its own, so a colour is matched, renamed or deprecated only within its theme. */
+function themePlans(themes: SyncTheme[], file: DesignFileTheme[], complete: boolean): ThemePlan[] {
+  const names = [...new Set([...themes.map((t) => t.name), ...file.map((t) => t.theme)])];
+  return names.map((theme) => ({
+    theme,
+    variables: plan(
+      themes.filter((t) => t.name === theme).flatMap((t) => t.colors.map(colorToken)),
+      file.filter((t) => t.theme === theme).flatMap((t) => t.variables),
+      sameVariable,
+      complete,
+    ),
+  }));
 }
 
 /** A design file entry the sync manages: one it made, so it has an identity. */

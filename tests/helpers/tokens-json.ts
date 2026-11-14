@@ -23,6 +23,7 @@ export function tokensJson({
   app,
   platform,
   styles = [],
+  themes = [],
 }: {
   colors?: ColorToken[];
   spacing?: number[];
@@ -34,8 +35,28 @@ export function tokensJson({
   /** The platform the app's code is for, as the scan records it. */
   platform?: "ios" | "android";
   styles?: StyleToken[];
+  /** The app's other themes, each with its own colours. */
+  themes?: { name: string; colors: ColorToken[] }[];
 }) {
   const colorValue = (hex: string) => ({ colorSpace: "srgb", components: [0, 0, 0], hex });
+  const colorGroup = (list: ColorToken[]) =>
+    Object.fromEntries(
+      list.map((color) => [
+        color.key,
+        {
+          $type: "color",
+          $value: colorValue(color.hex),
+          $extensions: {
+            designmap: {
+              ...(color.named !== false && { reference: `Theme.${color.key}` }),
+              source: "Theme.swift",
+              uses: 1,
+              ...(color.dark && { modes: { dark: colorValue(color.dark) } }),
+            },
+          },
+        },
+      ]),
+    );
   return JSON.stringify({
     $description: "test",
     ...((partial || app || platform) && {
@@ -43,22 +64,12 @@ export function tokensJson({
         designmap: { ...(app && { app }), ...(partial && { partial: true }), ...(platform && { platform }) },
       },
     }),
-    ...(colors.length > 0 && {
-      color: Object.fromEntries(
-        colors.map((color) => [
-          color.key,
-          {
-            $type: "color",
-            $value: colorValue(color.hex),
-            $extensions: {
-              designmap: {
-                ...(color.named !== false && { reference: `Theme.${color.key}` }),
-                source: "Theme.swift",
-                uses: 1,
-                ...(color.dark && { modes: { dark: colorValue(color.dark) } }),
-              },
-            },
-          },
+    ...(colors.length > 0 && { color: colorGroup(colors) }),
+    ...(themes.length > 0 && {
+      theme: Object.fromEntries(
+        themes.map((theme) => [
+          theme.name,
+          { $extensions: { designmap: { name: theme.name } }, color: colorGroup(theme.colors) },
         ]),
       ),
     }),

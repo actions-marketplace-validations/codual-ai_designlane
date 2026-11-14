@@ -272,6 +272,57 @@ describe("tokens.json for syncing", () => {
   });
 });
 
+describe("theme sets in tokens.json and DESIGN.md", () => {
+  const tint = { name: "tint", reference: "ColorSet.tint", source: "ColorSet.swift", kind: "code" as const };
+  const themed = () =>
+    scanOf([{ ...tint, light: "#111111", dark: "#222222" }], [], {
+      themes: [
+        { name: "Ice Cube", colors: [{ ...tint, light: "#df915e", dark: "#433744", line: 9, uses: 4 }] },
+        { name: "Ice-Cube", colors: [{ ...tint, light: "#000000", uses: 0 }] },
+      ],
+    });
+
+  it("writes each other theme as a group of its own, named as the code names it, beside the default's colours", () => {
+    const tokens = toDesignTokens(themed());
+    expect(ownKeys(tokens.color)).toEqual(["tint"]);
+    expect(ownKeys(tokens.theme)).toEqual(["Ice-Cube", "Ice-Cube-2"]);
+    expect(tokens.theme?.["Ice-Cube"]).toEqual({
+      $description: "The Ice Cube theme",
+      $extensions: { designmap: { name: "Ice Cube" } },
+      color: {
+        $description: "Most used first",
+        tint: {
+          $type: "color",
+          $value: colorValue("#df915e"),
+          $description: "From ColorSet.swift, 4 uses",
+          $extensions: {
+            designmap: {
+              reference: "ColorSet.tint",
+              source: "ColorSet.swift",
+              line: 9,
+              uses: 4,
+              modes: { dark: colorValue("#433744") },
+            },
+          },
+        },
+      },
+    });
+    expect(toDesignTokens(scanOf([{ ...tint }])).theme).toBeUndefined();
+  });
+
+  it("lists each other theme's colours in DESIGN.md, after the default theme's", () => {
+    const md = toDesignMd(themed());
+    expect(md).toContain(
+      "## Themes\n\nBesides its default theme, whose colours are listed above, the app has 2 other themes, each with its own colours in Light and Dark.",
+    );
+    expect(md).toContain(
+      "### Ice Cube\n\n- **tint** `#df915e` (dark `#433744`): from `ColorSet.swift` as `ColorSet.tint`.",
+    );
+    expect(md.indexOf("## Colors")).toBeLessThan(md.indexOf("## Themes"));
+    expect(toDesignMd(scanOf([{ ...tint }]))).not.toContain("## Themes");
+  });
+});
+
 describe("DESIGN.md", () => {
   it("puts the tokens in the front matter, with primary pointing at the colour named brand", async () => {
     const front = toDesignMd(await shop()).split("---")[1] ?? "";

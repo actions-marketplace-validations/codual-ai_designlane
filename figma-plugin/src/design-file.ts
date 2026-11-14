@@ -1,7 +1,7 @@
 /** What a Figma file holds and the marks a sync leaves on it: its collection and modes, variables, text styles and
  * fonts. */
 
-import type { DesignFile, DesignFileEntry, VariableValue } from "../../src/sync/plan.js";
+import type { DesignFile, DesignFileEntry, DesignFileTheme, VariableValue } from "../../src/sync/plan.js";
 import type { TextValue } from "../../src/sync/tokens-file.js";
 import { fromFigmaColor, hasOwnDark, weightOfStyle } from "./values.js";
 
@@ -9,8 +9,10 @@ import { fromFigmaColor, hasOwnDark, weightOfStyle } from "./values.js";
 export const NAMESPACE = "designmap";
 /** The plugin data keys a sync writes and reads back, under `NAMESPACE`. */
 export const KEYS = {
-  /** On the collection a sync made, set to `SYNCED_COLLECTION`. */
+  /** On the collection a sync made, set to `SYNCED_COLLECTION`, or `THEME_COLLECTION` for one of a theme. */
   collection: "collection",
+  /** On a theme's collection, the theme's name. */
+  theme: "theme",
   lightMode: "lightMode",
   darkMode: "darkMode",
   darkUnavailable: "darkUnavailable",
@@ -23,6 +25,7 @@ export const KEYS = {
   sheet: "sheet",
 } as const;
 export const SYNCED_COLLECTION = "tokens";
+export const THEME_COLLECTION = "theme";
 
 /** The app's name as a title, `Rummy`; a name already capitalized, like `SenbaFold`, is kept. */
 export const appTitle = (app: string) => `${app.charAt(0).toUpperCase()}${app.slice(1)}`;
@@ -30,6 +33,10 @@ export const appTitle = (app: string) => `${app.charAt(0).toUpperCase()}${app.sl
 /** What Designmap names what it makes for an app: "Rummy (Designmap)". */
 export const designmapName = (app: string | undefined) =>
   app ? `${appTitle(app)} (Designmap)` : "Designmap";
+/** What Designmap names the collection of one of an app's other themes: "IceCubes · Desert (Designmap)". */
+export const themeCollectionName = (app: string | undefined, theme: string) =>
+  designmapName(app ? `${appTitle(app)} · ${theme}` : theme);
+
 /** How many variables deep a value pointing at another variable is followed before it's taken as unreadable. */
 const MAX_ALIAS_DEPTH = 10;
 
@@ -46,6 +53,18 @@ export async function syncedCollection(): Promise<VariableCollection | undefined
   );
 }
 
+/** The collection a sync made for each of the app's other themes, by the theme's name; the first, if a designer
+ * duplicated one. */
+export async function themeCollections(): Promise<Map<string, VariableCollection>> {
+  const found = new Map<string, VariableCollection>();
+  for (const collection of await figma.variables.getLocalVariableCollectionsAsync()) {
+    if (collection.getSharedPluginData(NAMESPACE, KEYS.collection) !== THEME_COLLECTION) continue;
+    const theme = collection.getSharedPluginData(NAMESPACE, KEYS.theme);
+    if (!found.has(theme)) found.set(theme, collection);
+  }
+  return found;
+}
+
 export type SyncModes = { light?: string; dark?: string };
 
 /** The modes a sync writes to, as recorded when it made them, so a designer's own modes are never written over.
@@ -60,10 +79,20 @@ export function syncModes(collection: VariableCollection): SyncModes {
   return { ...(light ? { light } : {}), ...(dark ? { dark } : {}) };
 }
 
-/** Whether a sync found the collection couldn't take a Dark mode (Figma plans limit modes), so the code's dark values
- * are left out until one can be added. */
-export async function darkUnavailable(): Promise<boolean> {
-  return (await syncedCollection())?.getSharedPluginData(NAMESPACE, KEYS.darkUnavailable) === "true";
+/** The collections a sync found couldn't take a Dark mode (Figma plans limit modes): the default theme's, and the
+ * other themes' by name. */
+export interface DarkUnavailable {
+  main: boolean;
+  themes: Set<string>;
+}
+
+/** Which collections couldn't take a Dark mode, so the code's dark values for them are left out until one can be
+ * added. */
+export async function darkUnavailable(): Promise<DarkUnavailable> {
+  const full = (collection: VariableCollection | undefined) =>
+    collection?.getSharedPluginData(NAMESPACE, KEYS.darkUnavailable) === "true";
+  const themes = [...(await themeCollections())].filter(([, collection]) => full(collection));
+  return { main: full(await syncedCollection()), themes: new Set(themes.map(([theme]) => theme)) };
 }
 
 /** Each text style's font, by the style's id. */
@@ -83,14 +112,10 @@ export async function availableFontStyles(): Promise<Map<string, string[]>> {
 /** The file's entries as the sync plan compares them. */
 export async function readDesignFile(): Promise<DesignFile> {
   const collection = await syncedCollection();
-  const variables: DesignFileEntry<VariableValue>[] = [];
-  if (collection) {
-    const modes = syncModes(collection);
-    for (const id of collection.variableIds) {
-      const variable = await figma.variables.getVariableByIdAsync(id);
-      if (!variable) continue;
-      variables.push({ ...entryOf(variable), value: await syncedValue(variable, modes) });
-    }
+  const variables = collection ? await variablesOf(collection) : [];
+  const themes: DesignFileTheme[] = [];
+  for (const [theme, themeCollection] of await themeCollections()) {
+    themes.push({ theme, variables: await variablesOf(themeCollection) });
   }
   const textStyles: DesignFileEntry<Required<TextValue>>[] = (await figma.getLocalTextStylesAsync()).map(
     (style) => ({
@@ -102,7 +127,17 @@ export async function readDesignFile(): Promise<DesignFile> {
       },
     }),
   );
-  return { variables, textStyles };
+  return { variables, textStyles, themes };
+}
+
+async function variablesOf(collection: VariableCollection): Promise<DesignFileEntry<VariableValue>[]> {
+  const modes = syncModes(collection);
+  const variables: DesignFileEntry<VariableValue>[] = [];
+  for (const id of collection.variableIds) {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    if (variable) variables.push({ ...entryOf(variable), value: await syncedValue(variable, modes) });
+  }
+  return variables;
 }
 
 function entryOf(item: { id: string; name: string } & PluginDataMixin) {

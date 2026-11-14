@@ -99,9 +99,18 @@ export interface TypeStyle {
   uses: number;
 }
 
-export interface DesignTokens {
-  /** Every colour, most used first. */
+/** One of the app's themes beside its default one (`Desert` beside `IceCube`): the same colours, each with its own
+ * Light and Dark value. */
+export interface ColorTheme {
+  name: string;
   colors: ColorToken[];
+}
+
+export interface DesignTokens {
+  /** Every colour, most used first; for an app with several themes, its default theme's. */
+  colors: ColorToken[];
+  /** The app's other themes, in the order the code declares them; present only when it has some. */
+  themes?: ColorTheme[];
   /** Most used first. */
   systemColors: SystemColor[];
   /** Every text style, most used first. */
@@ -132,8 +141,6 @@ export interface FrameworkScan {
   /** Theme objects the code reads its design from that are defined outside the project (`ElementTheme`), so their
    * tokens are in the library's own code. */
   themesOutside?: string[];
-  /** Themes beyond one light and one dark (`black`, a list of presets), which Figma's two modes can't hold. */
-  otherThemes?: string[];
 }
 
 export interface ScanResult {

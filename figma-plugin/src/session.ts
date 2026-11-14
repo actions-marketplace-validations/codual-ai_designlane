@@ -1,7 +1,7 @@
 /** The plugin's conversation with its window: actions in turn, a plan made from the file as it is now, and an apply of
  * exactly the plan the designer saw. */
 
-import { planSync, type SyncPlan } from "../../src/sync/plan.js";
+import { type Plan, planSync, type SyncPlan } from "../../src/sync/plan.js";
 import { readTokensFile, type SyncColor, type SyncTokens } from "../../src/sync/tokens-file.js";
 import { type ApplyOptions, applyPlan } from "./apply.js";
 import {
@@ -12,7 +12,13 @@ import {
   saveConnection,
   savedConnection,
 } from "./connection.js";
-import { availableFontStyles, darkUnavailable, readDesignFile, textStyleFonts } from "./design-file.js";
+import {
+  availableFontStyles,
+  type DarkUnavailable,
+  darkUnavailable,
+  readDesignFile,
+  textStyleFonts,
+} from "./design-file.js";
 import { fetchTokensFile } from "./github.js";
 import { type PlanSummary, type RepoSource, type ToWindow, toPlugin } from "./messages.js";
 import {
@@ -58,15 +64,15 @@ export function createSession(send: (message: ToWindow) => void): (data: unknown
     // A new file replaces any plan already shown, even if this one can't be read.
     pending = undefined;
     const inCode = readTokensFile(parseJson(json, origin));
-    const darkLeftOut =
-      (await darkUnavailable()) && inCode.colors.some((color) => hasOwnDark(color.light, color.dark));
-    const tokens = darkLeftOut ? withoutDark(inCode) : withoutRedundantDark(inCode);
+    const leftOut = darkLeftOutOf(inCode, await darkUnavailable());
+    const darkLeftOut = leftOut.main || leftOut.themes.size > 0;
+    const tokens = withDarkWhereRoom(inCode, leftOut);
     const { plan, missingFonts } = await withoutMissingFonts(planSync(tokens, await readDesignFile()));
     pending = {
       id,
       plan,
       options: {
-        retryDark: darkLeftOut,
+        retryDark: leftOut,
         ...(tokens.app ? { app: tokens.app } : {}),
         ...(tokens.platform ? { platform: tokens.platform } : {}),
       },
@@ -177,15 +183,33 @@ function parseJson(text: string, origin: Origin): unknown {
 }
 
 const lightOnly = ({ dark: _, ...color }: SyncColor): SyncColor => color;
+const hasDarkValues = (colors: SyncColor[]) => colors.some((color) => hasOwnDark(color.light, color.dark));
 
-/** The code's tokens for a file that can't have a Dark mode, so dark values don't show as changed on every sync. */
-const withoutDark = (tokens: SyncTokens): SyncTokens => ({ ...tokens, colors: tokens.colors.map(lightOnly) });
+/** The collections whose dark values are left out: those that couldn't take a Dark mode and have dark values to
+ * write, each on its own, so one theme's full collection doesn't take the others' dark values. */
+function darkLeftOutOf(tokens: SyncTokens, full: DarkUnavailable): DarkUnavailable {
+  const themes = (tokens.themes ?? []).filter((t) => full.themes.has(t.name) && hasDarkValues(t.colors));
+  return { main: full.main && hasDarkValues(tokens.colors), themes: new Set(themes.map((t) => t.name)) };
+}
 
-/** The code's tokens with a dark value only where it differs from the light one, as the file holds them. */
-const withoutRedundantDark = (tokens: SyncTokens): SyncTokens => ({
-  ...tokens,
-  colors: tokens.colors.map((color) => (hasOwnDark(color.light, color.dark) ? color : lightOnly(color))),
-});
+/** The code's tokens as a file holds them: no dark values in a collection that can't have a Dark mode, so they
+ * don't show as changed on every sync, and elsewhere a dark value only where it differs from the light one. */
+function withDarkWhereRoom(tokens: SyncTokens, leftOut: DarkUnavailable): SyncTokens {
+  const own = (color: SyncColor) => (hasOwnDark(color.light, color.dark) ? color : lightOnly(color));
+  const change = (isLeftOut: boolean) => (isLeftOut ? lightOnly : own);
+  return {
+    ...tokens,
+    colors: tokens.colors.map(change(leftOut.main)),
+    ...(tokens.themes
+      ? {
+          themes: tokens.themes.map((theme) => ({
+            ...theme,
+            colors: theme.colors.map(change(leftOut.themes.has(theme.name))),
+          })),
+        }
+      : {}),
+  };
+}
 
 /** The plan without the text styles whose font this file doesn't have, which no sync could make, so they'd otherwise
  * show as new or changed every time; and their names, with the font they need. */
@@ -227,23 +251,35 @@ function splitByFont<T extends { name: string }>(
   return { kept, missing };
 }
 
+/** Every plan a sync makes, each with what its names are shown after: a theme's name (`Desert: color/tint`), since
+ * each theme has its own collection with the same names. */
+function plansOf({ variables, textStyles, themes }: SyncPlan): { label: string; plan: Plan<unknown> }[] {
+  return [
+    { label: "", plan: variables },
+    { label: "", plan: textStyles },
+    ...themes.map(({ theme, variables }) => ({ label: `${theme}: `, plan: variables })),
+  ];
+}
+
 function summarize(
   plan: SyncPlan,
   partial: boolean,
 ): Omit<PlanSummary, "missingFonts" | "darkLeftOut" | "applicable"> {
-  const { variables, textStyles } = plan;
-  const updates = [...variables.update, ...textStyles.update];
+  const plans = plansOf(plan);
+  const each = <T>(list: (p: Plan<unknown>) => T[]) =>
+    plans.flatMap(({ label, plan }) => list(plan).map((entry) => ({ label, entry })));
+  const updates = each((p) => p.update);
   return {
-    create: [...variables.create, ...textStyles.create].map((entry) => entry.name),
-    update: updates.filter((entry) => !entry.restored).map((entry) => entry.name),
-    restore: updates.filter((entry) => entry.restored).map((entry) => entry.name),
-    rename: [...variables.rename, ...textStyles.rename].map((entry) => ({
-      from: entry.name,
-      to: entry.token.reference ?? entry.token.name,
+    create: each((p) => p.create).map(({ label, entry }) => label + entry.name),
+    update: updates.filter(({ entry }) => !entry.restored).map(({ label, entry }) => label + entry.name),
+    restore: updates.filter(({ entry }) => entry.restored).map(({ label, entry }) => label + entry.name),
+    rename: each((p) => p.rename).map(({ label, entry }) => ({
+      from: label + entry.name,
+      to: label + (entry.token.reference ?? entry.token.name),
     })),
-    deprecate: [...variables.deprecate, ...textStyles.deprecate].map((entry) => entry.name),
-    unchanged: variables.unchanged + textStyles.unchanged,
+    deprecate: each((p) => p.deprecate).map(({ label, entry }) => label + entry.name),
+    unchanged: plans.reduce((sum, { plan }) => sum + plan.unchanged, 0),
     partial,
-    renamesSkipped: variables.renamesSkipped || textStyles.renamesSkipped,
+    renamesSkipped: plans.some(({ plan }) => plan.renamesSkipped),
   };
 }

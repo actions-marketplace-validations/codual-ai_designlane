@@ -449,3 +449,160 @@ describe("hostile input", () => {
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });
+
+describe("selectable themes", () => {
+  const colorSet = [
+    "import SwiftUI",
+    "public protocol ColorSet {",
+    "  var scheme: ColorScheme { get }",
+    "  var tintColor: Color { get set }",
+    "  var backgroundColor: Color { get set }",
+    "  var labelColor: Color { get set }",
+    "}",
+  ];
+  const set = (name: string, scheme: string, tint: string, background: string, label: string) =>
+    [
+      `public struct ${name}: ColorSet {`,
+      `  public var scheme: ColorScheme = .${scheme}`,
+      `  public var tintColor: Color = ${tint}`,
+      `  public var backgroundColor: Color = ${background}`,
+      `  public var labelColor: Color = ${label}`,
+      "  public init() {}",
+      "}",
+    ].join("\n");
+  const summary = (colors: { name: string; light: string; dark?: string; reference?: string }[]) =>
+    colors.map((c) => `${c.name} ${c.light}/${c.dark} ${c.reference}`);
+  const rgb = ".init(red: 187 / 255, green: 59 / 255, blue: 226 / 255)";
+
+  it("keeps the first theme as the app's colours, known by the protocol's members, and reads each other apart", async () => {
+    const { colors, themes } = await tokens("", {
+      "App/ColorSet.swift": [
+        ...colorSet,
+        set("IceCubeDark", "dark", rgb, ".init(hex: 0x101523)", ".white"),
+        set("IceCubeLight", "light", rgb, "Color.white", ".black"),
+        set("DesertDark", "dark", ".init(hex: 0xDF915E)", ".init(hex: 0x433744)", ".white"),
+        set("DesertLight", "light", ".init(hex: 0xDF915E)", ".init(hex: 0xFCF2EB)", ".clear"),
+      ].join("\n"),
+    });
+    expect(summary(colors)).toEqual([
+      "tintColor #bb3be2/undefined ColorSet.tintColor",
+      "backgroundColor #ffffff/#101523 ColorSet.backgroundColor",
+      "labelColor #000000/#ffffff ColorSet.labelColor",
+    ]);
+    expect(colors[1]).toMatchObject({ source: "App/ColorSet.swift", line: 18, kind: "code" });
+    expect(themes?.map((t) => [t.name, summary(t.colors)])).toEqual([
+      [
+        "Desert",
+        [
+          "tintColor #df915e/undefined ColorSet.tintColor",
+          "backgroundColor #fcf2eb/#433744 ColorSet.backgroundColor",
+          "labelColor #00000000/#ffffff ColorSet.labelColor",
+        ],
+      ],
+    ]);
+  });
+
+  it("takes a type's scheme from its scheme member before its name, and pairs a theme's types by name", async () => {
+    const hex = (digits: string) => `Color(hex: 0x${digits})`;
+    const { colors, themes } = await tokens("", {
+      "App/ColorSet.swift": [
+        ...colorSet,
+        set("Ink", "dark", hex("111111"), hex("222222"), hex("333333")),
+        set("InkLight", "light", hex("eeeeee"), hex("dddddd"), hex("cccccc")),
+        set("Paper", "light", hex("fafafa"), ".blue", hex("010101")),
+        set("Neon", "light", ".blue", ".red", ".green"),
+      ].join("\n"),
+    });
+    expect(summary(colors)[0]).toBe("tintColor #eeeeee/#111111 ColorSet.tintColor");
+    // A platform colour that adapts to the scheme has no one value to keep, and a theme of only those isn't one.
+    expect(themes?.map((t) => [t.name, summary(t.colors)])).toEqual([
+      [
+        "Paper",
+        [
+          "tintColor #fafafa/undefined ColorSet.tintColor",
+          "labelColor #010101/undefined ColorSet.labelColor",
+        ],
+      ],
+    ]);
+  });
+
+  it("reads only the protocol's members a theme stores in its own body, leaving its other colours as they were", async () => {
+    const { colors } = await tokens("", {
+      "App/ColorSet.swift": [
+        ...colorSet,
+        "struct MainDark: ColorSet {",
+        "  var scheme: ColorScheme = .dark",
+        "  var tintColor: Color = Color(hex: 0x123456)",
+        "  var accent: Color = Color(hex: 0xabcdef)",
+        "  func preview() { let tintColor: Color = Color(hex: 0xff0000); _ = tintColor }",
+        "}",
+        "struct MainLight: ColorSet { var scheme: ColorScheme = .light; var tintColor: Color = Color(hex: 0x654321) }",
+      ].join("\n"),
+    });
+    expect(summary(colors.filter((c) => c.reference === "ColorSet.tintColor"))).toEqual([
+      "tintColor #654321/#123456 ColorSet.tintColor",
+    ]);
+    expect(colors.find((c) => c.name === "accent")?.light).toBe("#abcdef");
+  });
+
+  it("takes a scheme only from a scheme member, a fixed colour only unchanged, and pairs types named Light and Dark", async () => {
+    const { colors, themes } = await tokens("", {
+      "App/Palette.swift": [
+        "import SwiftUI",
+        "protocol Palette { var ink: Color { get } }",
+        "struct Light: Palette { var ink: Color = .white.opacity(0.5); var weight: Font.Weight = .bold }",
+        "struct Dark: Palette { var ink: Color = Color(hex: 0x222222); var weight: Font.Weight = .light }",
+      ].join("\n"),
+    });
+    expect([summary(colors.filter((c) => c.reference === "Palette.ink")), themes]).toEqual([
+      ["ink #222222/undefined Palette.ink"],
+      undefined,
+    ]);
+  });
+
+  it("reads types sharing a colour protocol without a light and a dark one as plain colours, not themes", async () => {
+    const { colors, themes } = await tokens("", {
+      "App/Buttons.swift": [
+        "import SwiftUI",
+        "protocol ButtonColors { var bg: Color { get } }",
+        "struct PrimaryButton: ButtonColors { var bg: Color = Color(hex: 0x123456) }",
+        "struct SecondaryButton: ButtonColors { var bg: Color = Color(hex: 0x654321) }",
+      ].join("\n"),
+    });
+    expect([summary(colors), themes]).toEqual([
+      ["bg #123456/undefined bg", "bg #654321/undefined bg"],
+      undefined,
+    ]);
+  });
+
+  it("leaves a protocol only one type conforms to as the colours it always was", async () => {
+    const { colors, themes } = await tokens("", {
+      "App/ColorSet.swift": [
+        ...colorSet,
+        set("Brand", "light", "Color(hex: 0x123456)", ".white", ".black"),
+      ].join("\n"),
+    });
+    expect([summary(colors), themes]).toEqual([["tintColor #123456/undefined tintColor"], undefined]);
+  });
+
+  it("reads a colour declared with .init(hex:), only where it's declared as a colour", async () => {
+    const { colors } = await tokens(
+      ["let ink: Color = .init(hex: 0x112233)", "let size: Size = .init(hex: 0x445566)"].join("\n"),
+    );
+    expect(colors.map((c) => `${c.name} ${c.light}`)).toEqual(["ink #112233"]);
+  });
+
+  speedIt("stays fast on thousands of theme types, nested deep", async () => {
+    const types = Array.from(
+      { length: 3_000 },
+      (_, i) =>
+        `struct T${i}${i % 2 ? "Dark" : "Light"}: ColorSet { var tintColor: Color = Color(hex: 0x${String(i).padStart(6, "0")})`,
+    );
+    const started = performance.now();
+    const { themes } = await tokens("", {
+      "App/ColorSet.swift": [...colorSet, ...types, "}".repeat(3_000)].join("\n"),
+    });
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(themes).toHaveLength(2_999);
+  });
+});

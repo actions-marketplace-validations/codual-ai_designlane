@@ -137,6 +137,8 @@ function summary(scan: ScanResult): string {
       ];
       const top = tokens.colors.slice(0, 3).map((c) => `${c.name} (${c.uses})`);
       if (top.length) lines.push(`  most used colours: ${top.join(", ")}`);
+      const themes = (tokens.themes ?? []).map((t) => t.name);
+      if (themes.length) lines.push(`  ${plural(themes.length, "other theme")}: ${themes.join(", ")}`);
       return lines.join("\n");
     })
     .join("\n");

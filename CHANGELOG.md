@@ -7,6 +7,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Apps with several themes: each theme beside the default one is read with its own colours, Light and Dark, and
+  written under `theme` in tokens.json, keyed by its name (old files without it read as before). The Figma plugin
+  makes a collection for each, "IceCubes · Desert (Designmap)", matching, renaming and deprecating a theme's
+  variables only within it, and DESIGN.md lists each theme's colours. SwiftUI: types conforming to one protocol of
+  colours, paired light and dark by name or a `scheme` member (types with neither stay plain colours), each
+  colour known by the protocol's member (`ColorSet.tintColor`); the first theme declared is the default. React
+  Native: the themes beside a light and dark one that were left out before (`themes.black`, presets, a
+  `darkContrastTheme` in its own file). The CLI names them.
+- SwiftUI colours declared with `.init(hex:)` (`let ink: Color = .init(hex: 0x112233)`).
 - Android text styles kept in XML resources (`TextAppearance.*` styles and those inheriting one, followed up to
   Material's own), with their size, family and weight.
 - React Native font sizes an app names on its own (`variables.fontSizeLarge`, `FONT_SIZE_SMALL`), as text styles
@@ -14,6 +23,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - React Native colours of a theme chosen by platform (`Platform.OS === "ios" ? blackIOS : blackAndroid`,
   `Platform.select`, in the file or imported) read as iOS's, as a design shows them.
+
+### Removed
+
+- The scan's `otherThemes` and the note naming them: those themes are read now.
 
 ### Changed
 

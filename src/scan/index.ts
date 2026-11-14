@@ -74,7 +74,6 @@ export async function scanRepo(root: string): Promise<ScanResult> {
       ...(unresolvedLinks > 0 && { unresolvedLinks }),
       ...(found.navigationNotRead?.length && { navigationNotRead: found.navigationNotRead }),
       ...(found.themesOutside?.length ? { themesOutside: found.themesOutside } : {}),
-      ...(found.otherThemes?.length ? { otherThemes: found.otherThemes } : {}),
     });
   }
   return nativeAlongside.length > 0 ? { ...result, nativeAlongside } : result;

@@ -51,8 +51,6 @@ export interface FrameworkFindings {
   unresolvedLinks?: number;
   /** Theme objects the code reads its design from that are defined outside the project, in a library. */
   themesOutside?: string[];
-  /** Themes beyond one light and one dark, which aren't synced. */
-  otherThemes?: string[];
 }
 
 /**

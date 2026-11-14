@@ -36,6 +36,16 @@ stack creators), Expo Router's route files, a modal's whole content, and compone
 (lists, scrolling, safe areas); links between them come later. A React Native app's SwiftUI or Compose code (a widget, an extension) is left out, as its native
 side.
 
+### Apps with several themes
+
+Some apps let people pick a theme, each with a light and a dark version: SwiftUI types conforming to one protocol of
+colours (`IceCubeLight` and `IceCubeDark`, `DesertLight` and `DesertDark`), or React Native theme objects beyond one
+light and dark pair (`themes.black`, a list of presets). The first theme the code declares, or the one named `light`
+and `dark`, is the app's own colours, so reordering the themes in the code changes which one that is. Every other
+theme gets its own colours in tokens.json, under `theme`, and its own Figma collection with Light and Dark modes,
+such as **IceCubes · Desert (Designmap)**, with the same variable names, so designers can see every theme and design
+with any of them. DESIGN.md lists each theme's colours.
+
 A repo with both an iPhone and an Android app gets a design system for each, since the two often differ (a
 different blue, the platform's own fonts): `designmap/tokens.ios.json` and `designmap/tokens.android.json`, with one
 DESIGN.md covering both. Connect each Figma file to its app's path.

@@ -36,6 +36,24 @@ describe("designmap [dir]", () => {
     ).toBeDefined();
   });
 
+  it("names the app's other themes, when it has some", async () => {
+    const set = (name: string, hex: string) =>
+      `struct ${name}: ColorSet { var tint: Color = Color(hex: 0x${hex}) }`;
+    const root = await tempDir({
+      ...APP,
+      "App/ColorSet.swift": [
+        "import SwiftUI",
+        "protocol ColorSet { var tint: Color { get } }",
+        set("MainLight", "111111"),
+        set("MainDark", "222222"),
+        set("DesertLight", "df915e"),
+        set("OceanLight", "0000ff"),
+      ].join("\n"),
+    });
+    expect((await designmap(root)).out).toContain("  2 other themes: Desert, Ocean");
+    expect((await designmap(await tempDir(APP))).out).not.toContain("other theme");
+  });
+
   it("writes where --out says", async () => {
     const root = await tempDir(APP);
     const elsewhere = path.join(await tempDir({}), "system");

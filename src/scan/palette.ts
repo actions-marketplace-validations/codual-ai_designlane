@@ -30,11 +30,26 @@ export interface ColorFindings {
   literals: { hex: string; file: string }[];
   /** Each use of a platform colour (`.red`, `.systemBackground`) by name. */
   system: string[];
+  /** The app's themes beside the default one, whose colours are in `named`. */
+  themes?: ThemeFindings[];
+}
+
+/** A colour of a theme beside the default one. */
+export interface ThemeColor extends NamedColor {
+  /** The reference of the default theme's colour in the same place (`themes.light.bg` for `themes.black.bg`), whose
+   * uses it shares, since the code reaches whichever theme is chosen the same way; missing when that's its own
+   * reference (`ColorSet.tint` in every SwiftUI theme), or there's none. */
+  role?: string;
+}
+
+export interface ThemeFindings {
+  name: string;
+  colors: ThemeColor[];
 }
 
 /** Colours this close (distance between their RGBA values, out of 255) are one colour written twice. */
 const SAME_COLOR = 8;
-type Palette = Pick<DesignTokens, "colors" | "systemColors">;
+type Palette = Pick<DesignTokens, "colors" | "systemColors" | "themes">;
 
 export function palette(found: ColorFindings): Palette {
   const named = distinctNamed(found.named).map((c): ColorToken => ({ ...c, uses: 0 }));
@@ -66,9 +81,23 @@ export function palette(found: ColorFindings): Palette {
       unnamed.add({ name: hex, light: hex, source: firstFile.get(hex) ?? "", kind: "inline", uses: count });
   }
   const ranked = [...named, ...unnamed.colors].sort((a, b) => b.uses - a.uses);
+  const themes = (found.themes ?? [])
+    .filter((theme) => theme.colors.length > 0)
+    .map(({ name, colors }) => ({
+      name,
+      colors: distinctNamed(colors)
+        .map(
+          ({ role, ...color }): ColorToken => ({
+            ...color,
+            uses: exact.get(role ?? color.reference)?.uses ?? 0,
+          }),
+        )
+        .sort((a, b) => b.uses - a.uses),
+    }));
   return {
     colors: ranked,
     systemColors: mostCommon(found.system, byText).map(({ value, count }) => ({ name: value, uses: count })),
+    ...(themes.length > 0 ? { themes } : {}),
   };
 }
 
@@ -95,7 +124,7 @@ function referenceIndex(colors: ColorToken[]) {
 export const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /** One entry per reference and value: `Theme.surface` and `Color("surface")` stay two colours even with one value. */
-function distinctNamed(colors: NamedColor[]): NamedColor[] {
+function distinctNamed<T extends NamedColor>(colors: T[]): T[] {
   const seen = new Set<string>();
   return colors.filter((c) => {
     const key = `${c.reference}|${c.light}`;

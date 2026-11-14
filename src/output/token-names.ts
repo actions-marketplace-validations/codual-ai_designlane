@@ -1,6 +1,6 @@
 /** What tokens.json and DESIGN.md call each value, worked out once so both files name every token the same way. */
 
-import type { ColorToken, Platform, TypeStyle } from "../scan/types.js";
+import type { ColorTheme, ColorToken, Platform, TypeStyle } from "../scan/types.js";
 
 /** A token's key: the app's own name, or `hex-33a854` for a colour the code never names. Anything but letters,
  * digits, `_` and `-` becomes `-`, since keys can't contain `.`, `{` or `}` in either format. */
@@ -74,6 +74,12 @@ export function keyedColors(colors: ColorToken[]): KeyedColor[] {
     const darkKey = darkKeys.get(color);
     return { color, key, ...(darkKey ? { darkKey } : {}) };
   });
+}
+
+/** Each theme with a key of its own (`ice-cube` for `Ice Cube`), in the order the code has them. */
+export function keyedThemes(themes: ColorTheme[]): { theme: ColorTheme; key: string }[] {
+  const taken = claimed();
+  return themes.map((theme) => ({ theme, key: claim(taken, tokenKey(theme.name)) }));
 }
 
 /** A text style's values that the code sets: a size or weight it computes is left out. */

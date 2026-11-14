@@ -7,6 +7,7 @@
 import path from "node:path";
 import type { z } from "zod";
 import {
+  type ColorTheme,
   type ColorToken,
   FRAMEWORK_NAMES,
   type FrameworkId,
@@ -15,11 +16,11 @@ import {
   type ScanResult,
   type TypeStyle,
 } from "../scan/types.js";
-import { isNamedStyle, keyedColors, keyedStyles, tokenKey } from "./token-names.js";
+import { isNamedStyle, keyedColors, keyedStyles, keyedThemes, tokenKey } from "./token-names.js";
 import type { ColorTokenEntry, ColorValue, DesignTokensFile } from "./tokens-schema.js";
 
 /** A group of the file, as the schema types it. */
-type Group<K extends "color" | "typography"> = NonNullable<DesignTokensFile[K]>;
+type Group<K extends "color" | "typography" | "theme"> = NonNullable<DesignTokensFile[K]>;
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const channel = (hex: string, at: number) => round(Number.parseInt(hex.slice(at, at + 2), 16) / 255);
@@ -60,6 +61,22 @@ function colorEntry(color: ColorToken): z.input<typeof ColorTokenEntry> {
 function colors(all: ColorToken[]): Group<"color"> {
   const group: Group<"color"> = { $description: "Most used first" };
   for (const { color, key } of keyedColors(all)) if (color.kind !== "inline") group[key] = colorEntry(color);
+  return group;
+}
+
+/** Each other theme as a group of its colours, named as the code names it, which a sync knows it by. */
+function themes(all: ColorTheme[]): Group<"theme"> {
+  const group: Group<"theme"> = {
+    $description:
+      "The app's other themes, each with its own colours in Light and Dark; `color` is the default theme's",
+  };
+  for (const { theme, key } of keyedThemes(all)) {
+    group[key] = {
+      $description: `The ${theme.name} theme`,
+      $extensions: { designmap: { name: theme.name } },
+      color: colors(theme.colors),
+    };
+  }
   return group;
 }
 
@@ -117,6 +134,8 @@ function withTokens(file: DesignTokensFile, framework: FrameworkScan): DesignTok
   if (platform && file.$extensions) file.$extensions.designmap.platform = platform;
   const color = colors(tokens.colors);
   if (Object.keys(color).length > 1) file.color = color;
+  const theme = themes(tokens.themes ?? []);
+  if (Object.keys(theme).length > 1) file.theme = theme;
   const type = typography(tokens.typeStyles, platform);
   if (Object.keys(type).length > 1) file.typography = type;
   // A family only styles written in place use is left out; one no style names, a helper mixing several, is kept.

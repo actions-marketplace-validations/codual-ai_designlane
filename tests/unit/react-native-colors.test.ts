@@ -16,7 +16,12 @@ async function app(files: Record<string, string>) {
   const scan = await scanRepo(await tempDir({ ...MANIFEST, ...files }));
   const rn = scan.frameworks.find((f) => f.framework === "react-native");
   const color = (name: string): ColorToken | undefined => rn?.tokens.colors.find((c) => c.name === name);
-  return { scan, rn, color };
+  /** Each other theme as `name: colour light/dark reference uses`, a colour to a line. */
+  const themes = () =>
+    (rn?.tokens.themes ?? []).flatMap((theme) =>
+      theme.colors.map((c) => `${theme.name}: ${c.name} ${c.light}/${c.dark} ${c.reference} ${c.uses}`),
+    );
+  return { scan, rn, color, themes };
 }
 
 describe("React Native colours from theme objects", () => {
@@ -84,8 +89,8 @@ describe("React Native colours from theme objects", () => {
     expect(color("text")?.uses).toBe(2);
   });
 
-  it("keeps one light and one dark theme of several, and says which others it left", async () => {
-    const { scan, color } = await app({
+  it("keeps one light and one dark theme of several, and reads each other one as a theme of its own", async () => {
+    const { color, themes } = await app({
       "src/themes.ts": [
         "export const THEMES = {",
         '  denim: { buttonBg: "#1c58d9" },',
@@ -93,12 +98,15 @@ describe("React Native colours from theme objects", () => {
         "};",
         'export const themes = { light: { bg: "#fff" }, dark: { bg: "#000" }, black: { bg: "#000" } };',
       ].join("\n"),
-      "src/E.tsx": `${RN}export const E = () => <View />;`,
+      "src/E.tsx": `${RN}export const E = ({ theme }) => <View style={{ backgroundColor: theme.bg }} />;`,
     });
     expect(color("buttonBg")?.light).toBe("#1c58d9");
-    expect(color("bg")).toMatchObject({ light: "#ffffff", dark: "#000000" });
-    expect(scan.frameworks[0]?.tokens.colors.filter((c) => c.name === "bg")).toHaveLength(1);
-    expect(scanNotes(scan).join(" ")).toContain("(`onyx`, `black`)");
+    expect(color("bg")).toMatchObject({ light: "#ffffff", dark: "#000000", uses: 1 });
+    // A theme's colour is used wherever the default theme's in its place is: the code reaches the chosen theme alike.
+    expect(themes()).toEqual([
+      "onyx: buttonBg #4a7aff/undefined THEMES.onyx.buttonBg 0",
+      "black: bg #000000/undefined themes.black.bg 1",
+    ]);
   });
 
   it("leaves sibling roles that aren't themes alone", async () => {
@@ -108,7 +116,7 @@ describe("React Native colours from theme objects", () => {
       "src/F.tsx": `${RN}export const F = () => <View />;`,
     });
     expect(rn?.tokens.colors.filter((c) => c.name === "text")).toHaveLength(2);
-    expect(rn?.otherThemes).toBeUndefined();
+    expect(rn?.tokens.themes).toBeUndefined();
   });
 });
 
@@ -368,8 +376,8 @@ describe("React Native colours, read carefully", () => {
     expect([color("text")?.uses, color("brand")?.uses]).toEqual([0, 0]);
   });
 
-  it("keeps theme siblings that aren't themes, pairs each light and dark pair apart, and reduces nested presets", async () => {
-    const { scan, rn } = await app({
+  it("keeps theme siblings that aren't themes, pairs each light and dark pair apart, and reads nested presets as themes", async () => {
+    const { rn, themes } = await app({
       "src/a.ts": [
         'export const theme = { light: { surface: "#ffffff" }, dark: { surface: "#000000" }, common: { accent: "#ff0000" } };',
         'export const lightColors = { text: "#111111" };',
@@ -392,16 +400,16 @@ describe("React Native colours, read carefully", () => {
     expect(all("text")?.sort()).toEqual(["#111111/#eeeeee", "#222222/#dddddd"]);
     expect(all("qr")).toEqual(["#006aff/#0f73ff"]);
     expect(all("tint")).toEqual(["#123456/#654321"]);
-    const note = scanNotes(scan).join(" ");
-    expect(note).toContain("`day`");
-    expect(note).toContain("`black`");
-    expect(note).not.toContain("`common`");
+    expect(themes()).toEqual([
+      "day: qr #111111/#222222 INVITE_THEMES.day.light.qr 0",
+      "black: tint #000001/undefined themes.black.colors.tint 0",
+    ]);
   });
 });
 
 describe("React Native themes beside each other", () => {
   it("takes other objects beside a light and a dark theme for themes, and keeps one colour reached two ways", async () => {
-    const { scan, rn } = await app({
+    const { rn, themes } = await app({
       "src/colors.ts": [
         'export const light = { fontDefault: "#2f343d" };',
         'export const dark = { fontDefault: "#c1c7d0" };',
@@ -414,7 +422,7 @@ describe("React Native themes beside each other", () => {
     const font = rn?.tokens.colors.filter((c) => c.name === "fontDefault");
     expect(font?.map((c) => `${c.light}/${c.dark}`)).toEqual(["#2f343d/#c1c7d0"]);
     expect(rn?.tokens.colors.find((c) => c.name === "accent")).toBeDefined();
-    expect(scanNotes(scan).join(" ")).toContain("`brandIOS`");
+    expect(themes()).toEqual(["brandIOS: fontDefault #e4e4e4/undefined brandIOS.fontDefault 0"]);
   });
 
   it("follows an alias into a file imported by a path alias, by the path only one colour has", async () => {
@@ -454,17 +462,40 @@ describe("React Native colours, second look", () => {
     expect(color("light")).toBeUndefined();
   });
 
-  it("leaves out a light or dark theme's variants in files of their own, and says so", async () => {
-    const { scan, rn } = await app({
+  it("pairs a colour with its own light and dark in another theme, and variants beside the default theme in its file", async () => {
+    const { themes } = await app({
+      "src/themes.ts": [
+        'export const themes = { light: { bg: "#ffffff" }, dark: { bg: "#000000" }, sepia: { bg: { light: "#f4ecd8", dark: "#3b2f1e" } } };',
+      ].join("\n"),
+      "src/colors.ts": [
+        'export const lightTheme = { border: "#e6e1da" };',
+        'export const darkTheme = { border: "#1a3d32" };',
+        'export const lightContrastTheme = { border: "#000000" };',
+        'export const darkContrastTheme = { border: "#ffffff" };',
+      ].join("\n"),
+      "src/V.tsx": view,
+    });
+    expect(themes()).toEqual([
+      "ContrastTheme: border #000000/#ffffff lightContrastTheme.border 0",
+      "sepia: bg #f4ecd8/#3b2f1e themes.sepia.bg 0",
+    ]);
+  });
+
+  it("reads a light or dark theme's variants in files of their own as one theme, its light and dark paired", async () => {
+    const { rn, themes } = await app({
       "src/light.ts": 'export const lightTheme = { border: "#e6e1da" };',
       "src/dark.ts": 'export const darkTheme = { border: "#1a3d32" };',
       "src/dark-contrast.ts": 'export const darkContrastTheme = { border: "#ffffff", icon: "#401102" };',
+      "src/light-contrast.ts": 'export const lightContrastTheme = { border: "#000000", icon: "#fefefe" };',
       "src/V.tsx": view,
     });
     expect(rn?.tokens.colors.map((c) => `${c.name} ${c.light}/${c.dark}`)).toEqual([
       "border #e6e1da/#1a3d32",
     ]);
-    expect(scanNotes(scan).join(" ")).toContain("`darkContrastTheme`");
+    expect(themes()).toEqual([
+      "ContrastTheme: border #000000/#ffffff lightContrastTheme.border 0",
+      "ContrastTheme: icon #fefefe/#401102 lightContrastTheme.icon 0",
+    ]);
   });
 
   it("keeps a theme whose other values can't be read, and leaves out options with plain values", async () => {

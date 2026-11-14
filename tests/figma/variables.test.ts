@@ -173,12 +173,12 @@ describe("syncing variables into a Figma file", () => {
     const app = plugin({ maxModes: 1 });
     const json = tokensJson({ colors: [{ key: "bg", hex: "#ffffff", dark: "#000000" }] });
     expect(await app.sync(json)).toEqual([
-      "Dark values weren't added: the Designmap collection has as many modes as this Figma plan allows.",
+      'Dark values weren\'t added: the collection "Designmap" has as many modes as this Figma plan allows.',
     ]);
     const again = await app.plan(json);
     expect([again.update, again.unchanged, again.darkLeftOut, again.applicable]).toEqual([[], 1, true, true]);
     expect(await app.apply()).toEqual([
-      "Dark values weren't added: the Designmap collection has as many modes as this Figma plan allows.",
+      'Dark values weren\'t added: the collection "Designmap" has as many modes as this Figma plan allows.',
     ]);
   });
 
@@ -195,7 +195,7 @@ describe("syncing variables into a Figma file", () => {
     const brand = onlyCollection(app.fake).addMode("Brand");
     const json = tokensJson({ colors: [{ key: "bg", hex: "#ffffff", dark: "#000000" }], spacing: [8] });
     expect(await app.sync(json)).toEqual([
-      "Dark values weren't added: the Designmap collection has as many modes as this Figma plan allows.",
+      'Dark values weren\'t added: the collection "Designmap" has as many modes as this Figma plan allows.',
     ]);
     onlyCollection(app.fake).removeMode(brand);
     expect((await app.plan(json)).darkLeftOut).toBe(true);

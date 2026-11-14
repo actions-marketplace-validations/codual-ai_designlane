@@ -22,16 +22,6 @@ function navigationNotReadNote(scan: Pick<ScanResult, "frameworks">): string | u
   );
 }
 
-/** Which of the app's themes are synced when it has more than a light and a dark one, in a sentence, or undefined. */
-function otherThemesNote(scan: Pick<ScanResult, "frameworks">): string | undefined {
-  const themes = [...new Set(scan.frameworks.flatMap((f) => f.otherThemes ?? []))];
-  if (!themes.length) return undefined;
-  return (
-    `This app has more themes than a light and a dark one (${themes.map((t) => `\`${t}\``).join(", ")}): ` +
-    "Designmap reads its light and dark ones, or its first, since Figma's modes hold those."
-  );
-}
-
 /** What a React Native app's native code means for the result, in a sentence, or undefined. */
 function nativeAlongsideNote(scan: Pick<ScanResult, "nativeAlongside">): string | undefined {
   const native = scan.nativeAlongside ?? [];
@@ -42,9 +32,6 @@ function nativeAlongsideNote(scan: Pick<ScanResult, "nativeAlongside">): string 
 
 /** Everything a reader of the scan should know about what it couldn't see, as sentences. */
 export const scanNotes = (scan: Pick<ScanResult, "frameworks" | "nativeAlongside">) =>
-  [
-    themesOutsideNote(scan),
-    navigationNotReadNote(scan),
-    otherThemesNote(scan),
-    nativeAlongsideNote(scan),
-  ].filter((note) => note !== undefined);
+  [themesOutsideNote(scan), navigationNotReadNote(scan), nativeAlongsideNote(scan)].filter(
+    (note) => note !== undefined,
+  );

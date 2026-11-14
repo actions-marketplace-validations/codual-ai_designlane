@@ -106,6 +106,25 @@ function colorPart(frameworks: FrameworkScan[], prefix: Prefix): Part {
   return { tokens, prose };
 }
 
+/** Each of the app's other themes with its colours, all of them, since a theme is a whole set a designer switches to. */
+function themesProse(frameworks: FrameworkScan[]): string[] {
+  const several = frameworks.length > 1;
+  return frameworks.flatMap((f) => {
+    const themes = f.tokens.themes ?? [];
+    if (!themes.length) return [];
+    const heading = several ? `${FRAMEWORK_NAMES[f.framework]} themes` : "Themes";
+    const intro = `Besides its default theme, whose colours are listed above, the app has ${plural(themes.length, "other theme")}, each with its own colours in Light and Dark.`;
+    const each = themes.map((theme) => {
+      const lines = keyedColors(theme.colors).map(({ color: c, key }) => {
+        const dark = c.dark ? ` (dark \`${c.dark}\`)` : "";
+        return `- **${key}** \`${c.light}\`${dark}: from \`${c.source}\` as \`${c.reference ?? c.name}\`.`;
+      });
+      return `### ${theme.name}\n\n${lines.join("\n")}`;
+    });
+    return [`## ${heading}\n\n${intro}\n\n${each.join("\n\n")}`];
+  });
+}
+
 function typePart(frameworks: FrameworkScan[], prefix: Prefix): Part {
   const tokens: Yaml = {};
   const prose: string[] = [];
@@ -183,6 +202,7 @@ export function toDesignMd(scan: ScanResult): string {
 
   const sections = [`---\n${yaml(front)}\n---`, `# ${name}`, `## Overview\n\n${overview(scan, name)}`];
   if (colors.prose.length) sections.push(`## Colors\n\n${colors.prose.join("\n")}`);
+  sections.push(...themesProse(frameworks));
   if (type.prose.length) sections.push(`## Typography\n\n${type.prose.join("\n")}`);
   if (Object.keys(spacing).length) {
     const values = Object.values(spacing).join(", ");

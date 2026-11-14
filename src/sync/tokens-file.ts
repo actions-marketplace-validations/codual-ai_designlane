@@ -29,6 +29,12 @@ export interface SyncColor {
   reference?: string;
 }
 
+/** One of the app's themes beside its default one, known by its name. */
+export interface SyncTheme {
+  name: string;
+  colors: SyncColor[];
+}
+
 /** A text style's values as the code sets them: what it computes is left out. */
 export interface TextValue {
   family?: string;
@@ -45,7 +51,10 @@ export interface SyncTextStyle {
 
 /** Every token the app's code uses. */
 export interface SyncTokens {
+  /** The default theme's colours. */
   colors: SyncColor[];
+  /** The app's other themes, when it has some; a theme's colours are matched only within it. */
+  themes?: SyncTheme[];
   textStyles: SyncTextStyle[];
   spacing: number[];
   radii: number[];
@@ -69,17 +78,32 @@ export function readTokensFile(json: unknown): SyncTokens {
   const textStyles = tokensIn(file.data.typography).map(([key, style]) => ({
     token: syncTextStyle(key, style),
   }));
+  // A theme with no colours holds nothing to sync, and mustn't make an empty file look full.
+  const themes = tokensIn(file.data.theme)
+    .map(([, theme]) => ({
+      name: theme.$extensions.designmap.name,
+      colors: distinct(tokensIn(theme.color).map(([key, token]) => syncColor(key, token))),
+    }))
+    .filter((theme) => theme.colors.length > 0);
   const spacing = tokensIn(file.data.spacing).map(([, token]) => token.$value.value);
   const radii = tokensIn(file.data.radius).map(([, token]) => token.$value.value);
   const app = file.data.$extensions?.designmap.app;
   const complete = file.data.$extensions?.designmap.partial !== true;
   // An app whose code names nothing is a sync like any other, but a file that only looks empty would deprecate
   // everything: one Designmap didn't write, or a scan that didn't read the whole app.
-  if (!colors.length && !textStyles.length && !spacing.length && !radii.length && (!app || !complete)) {
+  if (
+    !colors.length &&
+    !themes.length &&
+    !textStyles.length &&
+    !spacing.length &&
+    !radii.length &&
+    (!app || !complete)
+  ) {
     throw new Error("This tokens.json has no tokens. Run designmap on the app again before syncing.");
   }
   return {
     colors: distinct(colors),
+    ...(themes.length > 0 ? { themes } : {}),
     textStyles: distinct(textStyles),
     spacing,
     radii,

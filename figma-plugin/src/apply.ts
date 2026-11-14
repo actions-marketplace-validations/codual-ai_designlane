@@ -1,10 +1,11 @@
 /** Makes a sync plan real in the Figma file: variables and text styles created, updated, renamed or deprecated. */
 
 import type { Platform } from "../../src/scan/types.js";
-import { type CodeToken, kindOf, type SyncPlan, type VariableValue } from "../../src/sync/plan.js";
+import { type CodeToken, kindOf, type Plan, type SyncPlan, type VariableValue } from "../../src/sync/plan.js";
 import type { TextValue } from "../../src/sync/tokens-file.js";
 import {
   availableFontStyles,
+  type DarkUnavailable,
   designmapName,
   isDeprecated,
   KEYS,
@@ -13,6 +14,9 @@ import {
   type SyncModes,
   syncedCollection,
   syncModes,
+  THEME_COLLECTION,
+  themeCollectionName,
+  themeCollections,
 } from "./design-file.js";
 import { leftOut, missingFont } from "./notes.js";
 import { describeFont, fontFor, toFigmaColor } from "./values.js";
@@ -34,9 +38,9 @@ const COLOR_SCOPES: VariableScope[] = ["FRAME_FILL", "SHAPE_FILL", "TEXT_FILL", 
 type Modes = SyncModes & { light: string };
 
 export interface ApplyOptions {
-  /** Try again to add the Dark mode a full collection couldn't take before. */
-  retryDark: boolean;
-  /** The app's name, which names a new collection: "Rummy (Designmap)". */
+  /** The collections to try again to add the Dark mode to that they couldn't take before. */
+  retryDark: DarkUnavailable;
+  /** The app's name, which names a new collection: "Rummy (Designmap)", "Rummy · Desert (Designmap)". */
   app?: string;
   /** The platform the app's code is for, whose code syntax shows how the code refers to each variable. */
   platform?: Platform;
@@ -55,29 +59,47 @@ export interface Applied {
 export async function applyPlan(plan: SyncPlan, options: ApplyOptions): Promise<Applied> {
   const notes: string[] = [];
   let darkValuesPending = false;
-  const { create, update, rename, deprecate } = plan.variables;
-  // The collection is only touched when there's variable work, so a sync of text styles alone doesn't make an empty one.
-  if ([create, update, rename, deprecate].some((list) => list.length > 0) || options.retryDark) {
-    darkValuesPending = await applyVariables(plan, options, notes);
+  // A collection is only touched when there's variable work, so a sync of text styles alone doesn't make an empty one.
+  const { retryDark } = options;
+  if (hasWork(plan.variables) || retryDark.main) {
+    const collection = (await syncedCollection()) ?? newSyncedCollection(options.app);
+    darkValuesPending = await applyVariables(plan.variables, collection, retryDark.main, options, notes);
+  }
+  const themes = await themeCollections();
+  for (const { theme, variables } of plan.themes) {
+    const retry = retryDark.themes.has(theme);
+    if (!hasWork(variables) && !retry) continue;
+    const collection = themes.get(theme) ?? newThemeCollection(options.app, theme);
+    if (await applyVariables(variables, collection, retry, options, notes)) darkValuesPending = true;
   }
   await applyTextStyles(plan, notes);
   return { notes, darkValuesPending };
 }
 
+const hasWork = ({ create, update, rename, deprecate }: Plan<unknown>) =>
+  [create, update, rename, deprecate].some((list) => list.length > 0);
+
 const noteDeleted = (notes: string[], name: string) =>
   notes.push(leftOut(name, "it was deleted after the plan was made"));
 
-/** Applies the plan's variables, and says whether it added a Dark mode with dark values still to write. */
-async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: string[]): Promise<boolean> {
-  const { collection, modes, darkValuesPending } = await collectionFor(plan, options, notes);
-  for (const token of plan.variables.create) {
+/** Applies a plan's variables to their collection, and says whether it added a Dark mode with dark values still to
+ * write. */
+async function applyVariables(
+  variables: Plan<VariableValue>,
+  collection: VariableCollection,
+  retryDark: boolean,
+  options: ApplyOptions,
+  notes: string[],
+): Promise<boolean> {
+  const { modes, darkValuesPending } = modesFor(collection, variables, retryDark, notes);
+  for (const token of variables.create) {
     const resolvedType = typeof token.value === "number" ? "FLOAT" : "COLOR";
     const variable = figma.variables.createVariable(token.name, collection, resolvedType);
     variable.scopes = NUMBER_SCOPES[kindOf(token.identity)] ?? COLOR_SCOPES;
     mark(variable, token, options.platform);
     setValue(variable, token.value, modes);
   }
-  for (const { id, name, token } of [...plan.variables.update, ...plan.variables.rename]) {
+  for (const { id, name, token } of [...variables.update, ...variables.rename]) {
     const variable = await figma.variables.getVariableByIdAsync(id);
     if (!variable) {
       noteDeleted(notes, name);
@@ -86,7 +108,7 @@ async function applyVariables(plan: SyncPlan, options: ApplyOptions, notes: stri
     mark(variable, token, options.platform);
     setValue(variable, token.value, modes);
   }
-  for (const { id, name } of plan.variables.deprecate) {
+  for (const { id, name } of variables.deprecate) {
     const variable = await figma.variables.getVariableByIdAsync(id);
     if (variable) deprecate(variable);
     else noteDeleted(notes, name);
@@ -126,15 +148,14 @@ async function applyTextStyles(plan: SyncPlan, notes: string[]): Promise<void> {
   }
 }
 
-/** The collection a sync made, or a new one, with its own Light mode, and a Dark mode when the code has dark values. */
-async function collectionFor(
-  plan: SyncPlan,
-  { retryDark, app }: ApplyOptions,
+/** The modes a sync writes to in `collection`: its own Light mode, and a Dark mode when the code has dark values. */
+function modesFor(
+  collection: VariableCollection,
+  { create, update, rename }: Plan<VariableValue>,
+  retryDark: boolean,
   notes: string[],
-): Promise<{ collection: VariableCollection; modes: Modes; darkValuesPending: boolean }> {
-  const collection = (await syncedCollection()) ?? newCollection(app);
+): { modes: Modes; darkValuesPending: boolean } {
   const light = syncModes(collection).light ?? addLightMode(collection);
-  const { create, update, rename } = plan.variables;
   const values = [
     ...create.map((token) => token.value),
     ...[...update, ...rename].map((entry) => entry.token.value),
@@ -147,15 +168,24 @@ async function collectionFor(
     darkValuesPending = added && !wantsDark;
   }
   const { dark } = syncModes(collection);
-  return { collection, modes: { light, ...(dark ? { dark } : {}) }, darkValuesPending };
+  return { modes: { light, ...(dark ? { dark } : {}) }, darkValuesPending };
 }
 
-/** A new collection, named for the app and for Designmap; a designer may rename it, since a sync finds it by its mark. */
-function newCollection(app: string | undefined): VariableCollection {
-  const collection = figma.variables.createVariableCollection(designmapName(app));
-  collection.setSharedPluginData(NAMESPACE, KEYS.collection, SYNCED_COLLECTION);
+/** A new collection with a Light mode; a designer may rename it, since a sync finds it by its mark. */
+function newCollection(name: string, mark: string): VariableCollection {
+  const collection = figma.variables.createVariableCollection(name);
+  collection.setSharedPluginData(NAMESPACE, KEYS.collection, mark);
   collection.renameMode(collection.defaultModeId, "Light");
   collection.setSharedPluginData(NAMESPACE, KEYS.lightMode, collection.defaultModeId);
+  return collection;
+}
+
+/** The default theme's collection, named for the app and for Designmap. */
+const newSyncedCollection = (app: string | undefined) => newCollection(designmapName(app), SYNCED_COLLECTION);
+
+function newThemeCollection(app: string | undefined, theme: string): VariableCollection {
+  const collection = newCollection(themeCollectionName(app, theme), THEME_COLLECTION);
+  collection.setSharedPluginData(NAMESPACE, KEYS.theme, theme);
   return collection;
 }
 
@@ -187,7 +217,7 @@ function addDarkMode(collection: VariableCollection, notes: string[]): boolean {
     if (!isModeLimit(error)) throw error;
     collection.setSharedPluginData(NAMESPACE, KEYS.darkUnavailable, "true");
     notes.push(
-      "Dark values weren't added: the Designmap collection has as many modes as this Figma plan allows.",
+      `Dark values weren't added: the collection "${collection.name}" has as many modes as this Figma plan allows.`,
     );
     return false;
   }

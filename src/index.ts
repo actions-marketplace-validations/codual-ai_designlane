@@ -8,9 +8,11 @@ export {
   type CodeToken,
   type DesignFile,
   type DesignFileEntry,
+  type DesignFileTheme,
   type Plan,
   planSync,
   type SyncPlan,
+  type ThemePlan,
   type VariableValue,
 } from "./sync/plan.js";
 export {
@@ -18,6 +20,7 @@ export {
   readTokensFile,
   type SyncColor,
   type SyncTextStyle,
+  type SyncTheme,
   type SyncTokens,
   type TextValue,
 } from "./sync/tokens-file.js";

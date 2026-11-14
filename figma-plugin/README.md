@@ -43,6 +43,12 @@ The plugin creates a variable collection named after the app, such as **Rummy (D
 one records the token's identity, so the next sync finds it under any name, and shows how the code refers to it
 (`Theme.surface`) as a variable's iOS code syntax and in its description.
 
+An app with several themes gets a collection for each theme beside its default one, such as **Rummy · Desert
+(Designmap)**, with Light and Dark modes and the same variable names as the app's own collection, so you can see
+every theme and design with any of them. Each theme is synced on its own, its changes named with it in the plan
+(`Desert: color/tint`), and a theme the code drops has its variables deprecated. The design system page shows the
+default theme.
+
 It also draws the design system on a page of the same name: a swatch for each colour, linked to its variable, in
 Light and, when it differs, Dark; and a sample of each text style, largest first. The
 page is redrawn on every Apply. Only Designmap's own frame changes, where you last moved it, so anything you add to

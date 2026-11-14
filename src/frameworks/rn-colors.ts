@@ -21,6 +21,7 @@ import {
   shadowed,
   unwrapped,
 } from "./js-sources.js";
+import { MODE, modeOf, namedColor, THEMES, themesApart } from "./rn-themes.js";
 import { TAILWIND_CONFIG } from "./tailwind-colors.js";
 
 /** Style properties that take a colour: in a style, a colour there is one the code uses, not one it names. */
@@ -52,10 +53,6 @@ const STYLE_COLOR = new Set([
 /** Style properties that aren't colours: an object setting one is a style, not a theme (`{ padding, color }`). */
 const STYLE_LAYOUT =
   /^(?:margin\w*|padding\w*|border(?:Top|Right|Bottom|Left|Start|End)?(?:Width|Radius|Style)|border\w*Radius|flex\w*|width|height|(?:min|max)(?:Width|Height)|position|top|right|bottom|left|start|end|font(?:Size|Weight|Family|Style)|lineHeight|letterSpacing|text(?:Align|Transform)|opacity|elevation|shadow(?:Offset|Opacity|Radius)|justifyContent|align(?:Items|Self|Content)|overflow|zIndex|gap|rowGap|columnGap|aspectRatio|display)$/;
-/** A key or variable naming a colour scheme: `light`, `darkTheme`, `LightColors`, `themeDark`. */
-const MODE = /^(?:(light|dark)(?:mode|theme|colou?rs?|palette)?|(?:theme|colou?rs?|palette)(light|dark))$/i;
-/** A parent holding the app's themes: `themes`, `THEMES`, `INVITE_THEMES`. */
-const THEMES = /(?:^|_)themes?$/i;
 /** A name a theme is reached through: `theme`, `colors`, `palette`, or one ending so (`appTheme`, `darkColors`). */
 const THEME_WORD = /^(?:theme|colou?rs?|palette)$|[a-z](?:Theme|Colou?rs?|Palette)$/;
 /** How many aliases (`primary: palette.blue500`) or spread objects are followed. */
@@ -78,19 +75,14 @@ interface Entry {
 }
 type Valued = Entry & { value: string };
 
-export interface RnColorFindings extends ColorFindings {
-  /** Themes beyond one light and one dark (`black`, Mattermost's presets), which aren't synced. */
-  otherThemes: string[];
-}
-
 /** `tailwind` holds the files whose colours Tailwind names (see tailwind-colors.ts), left out here. */
-export function rnColors(sources: JsSource[], tailwind: Set<string> = new Set()): RnColorFindings {
+export function rnColors(sources: JsSource[], tailwind: Set<string> = new Set()): ColorFindings {
   const read = sources.filter((s) => !TAILWIND_CONFIG.test(s.rel) && !tailwind.has(s.rel));
   const modules = new Modules(read);
   const leaves = new Map<ts.ObjectLiteralExpression, number>();
   const entries = read.flatMap((source) => collectNamed(source, modules, leaves));
   const valued = mostlyColors(resolveAliases(entries, modules), leaves);
-  const { kept, otherThemes } = oneThemeEach(valued);
+  const { kept, themes } = themesApart(valued);
   const named = once(pairModes(kept));
   const known: Known = {
     names: new Set(named.map((c) => c.name)),
@@ -98,7 +90,13 @@ export function rnColors(sources: JsSource[], tailwind: Set<string> = new Set())
     definitions: new Set(valued.map((e) => e.node)),
     holders: new Set(valued.flatMap((e) => e.path.slice(0, -1).map((part) => part.toLowerCase()))),
   };
-  const found: RnColorFindings = { named, references: [], literals: [], system: [], otherThemes };
+  const found: ColorFindings = {
+    named,
+    references: [],
+    literals: [],
+    system: [],
+    ...(themes.length > 0 ? { themes } : {}),
+  };
   for (const source of read) collectUses(source, known, found);
   return found;
 }
@@ -363,76 +361,10 @@ function resolveAliases(entries: Entry[], modules: Modules): Valued[] {
   });
 }
 
-/** Where an entry's theme is named in its path: the part under a `themes` parent, or a `light` or `dark` part, which
- * may be a module-level variable (`const light = { … }; const black = { … }`). */
-function themeAt(parts: string[]): number {
-  for (let i = 0; i < parts.length - 1; i++) {
-    if ((i > 0 && THEMES.test(parts[i - 1] ?? "")) || MODE.test(parts[i] ?? "")) return i;
-  }
-  return -1;
-}
-
-/**
- * When an app keeps several themes with the same colours (`themes.light`, `themes.dark`, `themes.black`; Mattermost's
- * presets), the colours of its light and dark themes, or of the first theme when none is named so, and the names of
- * the rest, which Figma's Light and Dark modes can't hold. Siblings that aren't themes (a palette's `primary` and
- * `secondary` roles) are left as they are: only a parent named `themes`, or one holding a `light` or `dark`, counts.
- */
-function oneThemeEach(entries: Valued[]): { kept: Valued[]; otherThemes: string[] } {
-  // A file whose module-level objects include a light or dark theme: its other objects may be themes too
-  // (`lightContrastTheme` beside `lightTheme`, `blackIOS` beside `light`).
-  const themeFiles = new Set(
-    entries.filter((e) => e.path.length > 1 && MODE.test(e.path[0] ?? "")).map((e) => e.source),
-  );
-  const byParent = new Map<string, Map<string, Valued[]>>();
-  for (const e of entries) {
-    const found = themeAt(e.path);
-    const at = found === -1 && e.path.length > 1 && themeFiles.has(e.source) ? 0 : found;
-    if (at === -1) continue;
-    const parent = `${e.source.rel}\0${e.path.slice(0, at).join("\0")}`;
-    const themes = byParent.get(parent) ?? new Map<string, Valued[]>();
-    const list = themes.get(e.path[at] ?? "");
-    if (list) list.push(e);
-    else themes.set(e.path[at] ?? "", [e]);
-    byParent.set(parent, themes);
-  }
-  const dropped = new Set<Valued>();
-  const otherThemes: string[] = [];
-  for (const themes of byParent.values()) {
-    const names = [...themes.keys()];
-    if (names.length < 2) continue;
-    const modes = names.filter((n) => MODE.test(n));
-    const keep = new Set(modes.length > 0 ? modes : names.slice(0, 1));
-    // A theme repeats the kept one's colours; a sibling naming others (`common: { accent }`) isn't a theme.
-    const after = (e: Valued) => e.path.slice(Math.max(themeAt(e.path), 0) + 1).join("\0");
-    const keptKeys = new Set([...keep].flatMap((n) => (themes.get(n) ?? []).map(after)));
-    for (const [name, list] of themes) {
-      const shared = list.filter((e) => keptKeys.has(after(e))).length;
-      if (keep.has(name) || shared * 2 < list.length) continue;
-      for (const e of list) dropped.add(e);
-      otherThemes.push(name);
-    }
-  }
-  // Variants of a light or dark theme, each in a file of its own (`lightContrastTheme`, `highContrastDark`).
-  if (entries.some((e) => e.path.slice(0, -1).some((part) => MODE.test(part)))) {
-    for (const e of entries) {
-      const root = e.path[0] ?? "";
-      if (e.path.length < 2 || MODE.test(root) || !/light|dark/i.test(root) || dropped.has(e)) continue;
-      dropped.add(e);
-      if (!otherThemes.includes(root)) otherThemes.push(root);
-    }
-  }
-  return { kept: entries.filter((e) => !dropped.has(e)), otherThemes };
-}
-
 /** Colours told apart only by a `light` and a `dark` object (`themes.light.surface`, `themes.dark.surface`, or
  * `lightTheme.surface` and `darkTheme.surface` in their own files) are one colour with both values; the rest stand as
  * they are, a second colour at the same path included. */
 function pairModes(entries: Valued[]): NamedColor[] {
-  const modeOf = (part: string) => {
-    const m = part.match(MODE);
-    return (m?.[1] ?? m?.[2])?.toLowerCase() as "light" | "dark" | undefined;
-  };
   const pairs = new Map<string, { light?: Valued; dark?: Valued }>();
   const alone: NamedColor[] = [];
   // A colour with its own two values, `SECONDARY_LABEL = { light: "…", dark: "…" }`, is named by its object.
@@ -462,15 +394,6 @@ function pairModes(entries: Valued[]): NamedColor[] {
       kind: "code",
     });
   }
-  const named = (e: Valued, dark?: string): NamedColor => ({
-    name: e.name,
-    light: e.value,
-    ...(dark && dark !== e.value ? { dark } : {}),
-    source: e.source.rel,
-    reference: renderPath(e.path),
-    line: e.line,
-    kind: "code",
-  });
   for (const e of rest) {
     const at = e.path.slice(0, -1).findIndex((part) => modeOf(part) !== undefined);
     const mode = at === -1 ? undefined : modeOf(e.path[at] ?? "");
@@ -479,15 +402,15 @@ function pairModes(entries: Valued[]): NamedColor[] {
     const key = mode && [...e.path.slice(0, at), rest, ...e.path.slice(at + 1)].join("\0");
     const pair = key ? (pairs.get(key) ?? {}) : undefined;
     if (!mode || !key || !pair || pair[mode]) {
-      alone.push(named(e));
+      alone.push(namedColor(e));
       continue;
     }
     pair[mode] = e;
     pairs.set(key, pair);
   }
   const paired = [...pairs.values()].flatMap(({ light, dark }) => {
-    if (light) return [named(light, dark?.value)];
-    return dark ? [named(dark)] : [];
+    if (light) return [namedColor(light, dark?.value)];
+    return dark ? [namedColor(dark)] : [];
   });
   return [...paired, ...alone];
 }

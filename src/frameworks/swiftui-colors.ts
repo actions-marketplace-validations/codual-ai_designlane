@@ -4,9 +4,11 @@ import { lineNumbers } from "./source-text.js";
 import { memberOf, ownerAt, qualifiedOwnerAt } from "./swift-owners.js";
 import { tokenIndexAt } from "./swift-tokens.js";
 import { matchesInCode, matchesPerLine, type SwiftSource, tokensOf } from "./swiftui-sources.js";
+import { swiftThemes } from "./swiftui-themes.js";
 
 // Colour patterns are built from these parts so each reads like the Swift it matches.
-const COLOR_CALL = String.raw`\b(?:Color|UIColor|NSColor)\(\s*`;
+/** `Color(`, its UIKit and AppKit forms, or `.init(` where a colour is declared (`let ink: Color = .init(hex: …)`). */
+const COLOR_CALL = String.raw`(?:\b(?:Color|UIColor|NSColor)|\.init)\(\s*`;
 const NUMBER = String.raw`(\d+(?:\.\d+)?)`;
 /** A channel as Swift writes it: a 0–1 number, or `187 / 255`. */
 const CHANNEL = String.raw`${NUMBER}(?:\s*\/\s*(255)(?:\.0)?)?`;
@@ -111,9 +113,16 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
   // type each is declared on, so `Theme.surface` counts as a use of `surface`.
   const typeMembers = new Set<string>();
   const owners = new Map<string, Set<string>>();
+  const values = new Map(sources.map((source) => [source, [...literals(source, opacityFirst)]]));
+  const byStart = new Map(
+    [...values].map(([source, found]) => [source, new Map(found.map((value) => [value.start, value.hex]))]),
+  );
+  const themes = swiftThemes(sources, (source, offset) => byStart.get(source)?.get(offset));
   for (const source of sources) {
     const declaredHere: { color: NamedColor; start: number }[] = [];
-    for (const { hex, prefix, isInit, start } of literals(source, opacityFirst)) {
+    const inTheme = themes.valueStarts.get(source.rel);
+    for (const { hex, prefix, isInit, start } of values.get(source) ?? []) {
+      if (inTheme?.has(start)) continue;
       const declared = DECLARED.exec(prefix);
       // `.init(red: …)` is only a colour when declared as one: `let ink: Color = .init(…)`.
       if (isInit && !/Color$/.test(declared?.[3] ?? "")) continue;
@@ -148,6 +157,8 @@ export function swiftColors(sources: SwiftSource[], assets: NamedColor[]): Color
       found.references.push({ name: generatedName(m[1] ?? "") });
     }
   }
+  found.named.push(...themes.named);
+  if (themes.themes.length > 0) found.themes = themes.themes;
   // A colour declared on a type takes over a platform one (`static let primary` makes `.primary` the app's); a
   // local variable or an asset doesn't: Xcode generates no symbol for an asset named like a platform colour, except
   // `.accentColor`, which is the `AccentColor` asset.
