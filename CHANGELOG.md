@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Changed
+
+- tokens.json holds only the colours and text styles the code names, the design system a sync keeps. Colours and
+  text styles written in place, and spacing and corner radii, are listed in DESIGN.md only, so editing a screen's
+  layout no longer shows up as design-system changes in Figma. A Figma file synced before this sees those
+  spacing, radius, unnamed colour and in-place text style variables marked deprecated on its next sync.
+
 ### Added
 
 - React Native screens: components React Navigation's screens show (`component`, `getComponent`, a children

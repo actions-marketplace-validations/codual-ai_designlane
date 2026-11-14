@@ -1,4 +1,5 @@
-/** A tokens.json as Designmap writes it, with just the tokens a test needs. */
+/** A tokens.json in Designmap's format, with just the tokens a test needs; spacing, radii and unnamed colours are
+ * as files written before Designmap left them to DESIGN.md hold them. */
 
 interface ColorToken {
   key: string;

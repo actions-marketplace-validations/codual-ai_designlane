@@ -18,7 +18,10 @@ import { tempDir } from "../helpers/temp.js";
 const APP = {
   "App/Theme.swift": [
     "import SwiftUI",
-    "enum Theme { static let brand = Color(red: 0.2, green: 0.4, blue: 0.9) }",
+    "enum Theme {",
+    "  static let brand = Color(red: 0.2, green: 0.4, blue: 0.9)",
+    "  static let glass = Color(red: 1, green: 0, blue: 0, opacity: 0.5)",
+    "}",
     "extension Font { static let heading = Font.system(size: 22, weight: .semibold) }",
   ].join("\n"),
   "App/Home.swift": [
@@ -26,7 +29,7 @@ const APP = {
     "let accent = Color(red: 0, green: 0.5, blue: 0)",
     "struct Home: View {",
     "  var body: some View { Text(t).font(.heading).foregroundStyle(Theme.brand).tint(accent)",
-    "    .padding(8).cornerRadius(12).background(Color(red: 1, green: 0, blue: 0, opacity: 0.5)) }",
+    "    .padding(8).cornerRadius(12).background(Theme.glass) }",
     "}",
   ].join("\n"),
 };
@@ -95,7 +98,7 @@ describe("reading tokens.json", () => {
     const read = await tokensOf(APP);
     expect(read.colors.map((c) => [c.identity, c.light])).toEqual([
       ["color:Theme.brand", { hex: "#3366e6", alpha: 1 }],
-      ["color:#ff0000/0.502", { hex: "#ff0000", alpha: 0.502 }],
+      ["color:Theme.glass", { hex: "#ff0000", alpha: 0.502 }],
       ["color:accent@App/Home.swift", { hex: "#008000", alpha: 1 }],
     ]);
     expect(read.textStyles).toEqual([
@@ -106,7 +109,8 @@ describe("reading tokens.json", () => {
         reference: "Font.heading",
       },
     ]);
-    expect([read.spacing, read.radii]).toEqual([[8], [12]]);
+    // Spacing and radii the code writes in place are DESIGN.md's, not a sync's.
+    expect([read.spacing, read.radii]).toEqual([[], []]);
   });
 
   it("gives a file-local colour the same identity whether or not another file has one of that name", async () => {
@@ -184,6 +188,15 @@ describe("reading tokens.json", () => {
     );
   });
 
+  it("syncs an app whose code names nothing, unless the scan missed part of it", () => {
+    const empty = (partial: boolean) => ({
+      $description: "test",
+      $extensions: { designmap: { app: "Shop", ...(partial ? { partial: true } : {}) } },
+    });
+    expect(readTokensFile(empty(false))).toMatchObject({ colors: [], textStyles: [], complete: true });
+    expect(() => readTokensFile(empty(true))).toThrow(/has no tokens\. Run designmap/);
+  });
+
   it("refuses a token Designmap wouldn't write, naming it and saying what to do", () => {
     const refusal = (file: object) => () => readTokensFile({ $description: "test", ...file });
     const say = (path: string) =>
@@ -211,13 +224,7 @@ describe("reading tokens.json", () => {
 describe("planning a sync", () => {
   it("creates everything on a first sync, named from the code", async () => {
     const plan = planSync(await tokensOf(APP), { variables: [], textStyles: [] });
-    expect(plan.variables.create.map((v) => v.name)).toEqual([
-      "color/brand",
-      "color/Unnamed/ff000080",
-      "color/accent",
-      "spacing/8",
-      "radius/12",
-    ]);
+    expect(plan.variables.create.map((v) => v.name)).toEqual(["color/brand", "color/glass", "color/accent"]);
     expect(plan.textStyles.create.map((s) => [s.name, s.reference])).toEqual([
       ["Text/heading", "Font.heading"],
     ]);
@@ -243,7 +250,7 @@ describe("planning a sync", () => {
       deprecate: [],
       rename: [],
       renamesSkipped: false,
-      unchanged: 5,
+      unchanged: 3,
     });
     expect(plan.textStyles.unchanged).toBe(1);
   });

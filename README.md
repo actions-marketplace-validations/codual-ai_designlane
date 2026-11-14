@@ -7,12 +7,14 @@ https://github.com/user-attachments/assets/29a82c2f-6df5-4788-a596-fab2a4b10efb
 ## How it works
 
 1. **Read from the code.** Designmap reads your app's colours, type styles, spacing and corner radii, with how the
-   code refers to each one, and writes them to `designmap/tokens.json`. A GitHub Action keeps that file current on
-   every push.
+   code refers to each one. The colours and text styles the code names (`Theme.surface`, a typography style) go to
+   `designmap/tokens.json`, the design system a sync keeps; values written in place in a screen's layout, and the
+   spacing and radii, are listed in `DESIGN.md`, so editing a screen doesn't change the design system. A GitHub
+   Action keeps both current on every push.
 2. **See what changed.** The Designmap plugin for Figma reads `tokens.json` from your repo and shows the plan: what's
    new, what changed, and what the code no longer uses. Nothing changes until you press Apply.
 3. **Apply.** Your Figma variables and text styles update in place, and a page in the file shows the design system
-   as swatches, type samples and scales. Names a designer changed are kept, and nothing is deleted.
+   as swatches and type samples. Names a designer changed are kept, and nothing is deleted.
 
 Designmap reads SwiftUI and Jetpack Compose apps today. For Compose it reads the design tokens: the Material colour
 scheme (each role with its Light and Dark value), the type scale and named text styles, an app's own colour class,

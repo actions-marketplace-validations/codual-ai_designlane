@@ -1,6 +1,6 @@
 /** The page that shows the app's design system as a designer sees it: colour swatches linked to their variables, a
- * sample of each text style, and the spacing and radius scales. Redrawn on every apply; only its own frame changes,
- * so what a designer adds to the page stays. */
+ * sample of each text style, and the spacing and radius scales a file written before Designmap left them to DESIGN.md
+ * holds. Redrawn on every apply; only its own frame changes, so what a designer adds to the page stays. */
 
 import type { VariableValue } from "../../src/sync/plan.js";
 import {

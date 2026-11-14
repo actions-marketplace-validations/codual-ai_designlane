@@ -1,8 +1,8 @@
 /**
  * Reads a tokens.json that Designmap wrote into the tokens a sync works with. Each token's identity is how the code
- * refers to it (`Theme.surface`), so a sync finds it again whatever it's called in the design file. Values the code
- * never names are known by the value itself (an inline `#ff0000`, a spacing of 8, a `System 15 semibold` style):
- * when the code changes one, it's a new token, and the old one is deprecated.
+ * refers to it (`Theme.surface`), so a sync finds it again whatever it's called in the design file. Designmap writes
+ * only what the code names; a file written before it did may hold values known by the value itself (an inline
+ * `#ff0000`, a spacing of 8), which sync as before until the next run drops them.
  */
 
 import { z } from "zod";
@@ -71,7 +71,11 @@ export function readTokensFile(json: unknown): SyncTokens {
   }));
   const spacing = tokensIn(file.data.spacing).map(([, token]) => token.$value.value);
   const radii = tokensIn(file.data.radius).map(([, token]) => token.$value.value);
-  if (!colors.length && !textStyles.length && !spacing.length && !radii.length) {
+  const app = file.data.$extensions?.designmap.app;
+  const complete = file.data.$extensions?.designmap.partial !== true;
+  // An app whose code names nothing is a sync like any other, but a file that only looks empty would deprecate
+  // everything: one Designmap didn't write, or a scan that didn't read the whole app.
+  if (!colors.length && !textStyles.length && !spacing.length && !radii.length && (!app || !complete)) {
     throw new Error("This tokens.json has no tokens. Run designmap on the app again before syncing.");
   }
   return {
@@ -79,8 +83,8 @@ export function readTokensFile(json: unknown): SyncTokens {
     textStyles: distinct(textStyles),
     spacing,
     radii,
-    complete: file.data.$extensions?.designmap.partial !== true,
-    ...(file.data.$extensions?.designmap.app ? { app: file.data.$extensions.designmap.app } : {}),
+    complete,
+    ...(app ? { app } : {}),
     ...(file.data.$extensions?.designmap.platform
       ? { platform: file.data.$extensions.designmap.platform }
       : {}),

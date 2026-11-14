@@ -81,12 +81,11 @@ describe("tokens.json", () => {
       string,
       { $value: unknown; $description: string }
     >;
-    expect(ownKeys(color)).toEqual(["brand", "ink", "hex-ff0000"]);
+    expect(ownKeys(color)).toEqual(["brand", "ink"]);
     expect(color.brand).toMatchObject({
       $value: { colorSpace: "srgb", components: [0.2, 0.4, 0.902], hex: "#3366e6" },
       $description: "From Shop/Theme.swift, 3 uses",
     });
-    expect(color["hex-ff0000"]?.$description).toBe("Written without a name in Shop/Home.swift, 1 use");
   });
 
   it("keeps a colour's opacity", () => {
@@ -107,21 +106,57 @@ describe("tokens.json", () => {
         fontWeight: { $type: "fontWeight", $value: 600 },
       },
     });
-    expect(ownKeys((typography as Record<string, unknown>)["system-bold"])).toEqual([
+    const computedSize = scanOf(
+      [],
+      [{ name: "caption", kind: "app", reference: "Font.caption", weight: "bold" }],
+    );
+    expect(ownKeys((toDesignTokens(computedSize).typography as Record<string, unknown>).caption)).toEqual([
       "fontFamily",
       "fontWeight",
     ]);
   });
 
-  it("writes spacing and radii smallest first, decimals included", () => {
-    const scan = scanOf([], [], { spacing: [16, 0.5, 8], radii: [12, 4] });
+  it("leaves out what the code writes in place, which DESIGN.md lists: colours, text styles, spacing and radii", () => {
+    const scan = scanOf(
+      [
+        { name: "brand", light: "#3366e6", reference: "Theme.brand" },
+        { name: "#ff0000", light: "#ff0000", kind: "inline" },
+      ],
+      [
+        { name: "title", kind: "text-style", size: 28 },
+        { name: "heading", kind: "app", reference: "Font.heading", size: 22 },
+        { name: "System 15 semibold", kind: "system", size: 15, weight: "semibold" },
+        { name: "Inter 13", kind: "custom", family: "Inter", size: 13 },
+      ],
+      { spacing: [16, 0.5, 8], radii: [12, 4], fonts: ["Inter"] },
+    );
     const tokens = toDesignTokens(scan);
-    expect(ownKeys(tokens.spacing)).toEqual(["space-0_5", "space-8", "space-16"]);
-    expect(ownKeys(tokens.radius)).toEqual(["radius-4", "radius-12"]);
-    expect(tokens.radius).toMatchObject({
-      "radius-12": { $type: "dimension", $value: { value: 12, unit: "px" } },
+    expect(ownKeys(tokens.color)).toEqual(["brand"]);
+    expect(ownKeys(tokens.typography)).toEqual(["title", "heading"]);
+    expect([tokens.spacing, tokens.radius]).toEqual([undefined, undefined]);
+    expect(tokens.fontFamily).toBeUndefined();
+    const md = toDesignMd(scan);
+    for (const listed of ["`#ff0000`", "system-15-semibold", "inter-13", "smallest first: 0.5px, 8px, 16px."])
+      expect(md).toContain(listed);
+  });
+
+  it("keys a named style as DESIGN.md does, though a style written in place shares its family", () => {
+    const scan = scanOf(
+      [],
+      [
+        { name: "inter", kind: "app", reference: "Font.inter", family: "Inter", size: 20 },
+        { name: "Inter, computed size", kind: "custom", family: "Inter" },
+      ],
+      { fonts: ["Inter"] },
+    );
+    const [key] = ownKeys(toDesignTokens(scan).typography);
+    expect(toDesignMd(scan)).toContain(`  ${key}:\n    fontFamily: "Inter"\n    fontSize: "20px"`);
+    expect(toDesignTokens(scan).fontFamily).toEqual({ Inter: { $type: "fontFamily", $value: "Inter" } });
+    // A helper mixing families has none of its own, so its families are kept from the scan's list.
+    const mixed = scanOf([], [{ name: "brand", kind: "app", reference: "Font.brand", family: "" }], {
+      fonts: ["Lato", "Inter"],
     });
-    expect(toDesignMd(scan)).toContain("smallest first: 0.5px, 8px, 16px.");
+    expect(ownKeys(toDesignTokens(mixed).fontFamily)).toEqual(["Lato", "Inter"]);
   });
 
   it("names same-named colours by how the code refers to each, so none overwrites another", () => {
@@ -159,7 +194,6 @@ describe("tokens.json for syncing", () => {
     expect(color.brand?.$extensions).toEqual({
       designmap: { reference: "Theme.brand", source: "Shop/Theme.swift", line: 3, uses: 3 },
     });
-    expect(color["hex-ff0000"]?.$extensions).toEqual({ designmap: { source: "Shop/Home.swift", uses: 1 } });
     expect((tokens.typography as Record<string, { $extensions: unknown }>).heading?.$extensions).toEqual({
       designmap: { name: "heading", reference: "Font.heading", uses: 1 },
     });

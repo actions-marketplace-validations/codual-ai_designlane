@@ -103,10 +103,14 @@ const WEIGHT_NUMBERS: Record<string, number> = {
   black: 900,
 };
 
+/** A style the code names: a platform text style (`headline`) or the app's own helper (`Font.brand`), not one
+ * written in place. */
+export const isNamedStyle = (style: TypeStyle) => style.kind === "app" || style.kind === "text-style";
+
 /** A text style's key: the app's own name (`senbaCaption`, `headline`), or a description made into one
  * (`System 15 semibold` is `system-15-semibold`; `System, computed size semibold` is `system-semibold`). */
 function typeStyleKey(style: TypeStyle): string {
-  if (style.kind === "app" || style.kind === "text-style") return tokenKey(style.name);
+  if (isNamedStyle(style)) return tokenKey(style.name);
   const words =
     style.name
       .toLowerCase()

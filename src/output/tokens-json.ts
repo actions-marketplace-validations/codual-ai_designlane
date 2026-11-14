@@ -1,21 +1,25 @@
-/** The scan as W3C design tokens (DTCG 2025.10), which Figma, Tokens Studio and Style Dictionary import. */
+/**
+ * The scan's design system as W3C design tokens (DTCG 2025.10), which Figma, Tokens Studio and Style Dictionary
+ * import: only what the code names (`Theme.surface`, a typography style), since a value written in place changes
+ * whenever a screen's layout does. DESIGN.md lists those values, and the spacing and radii the code uses.
+ */
 
 import path from "node:path";
 import type { z } from "zod";
 import {
   type ColorToken,
-  type DesignTokens,
   FRAMEWORK_NAMES,
   type FrameworkId,
   type FrameworkScan,
   type Platform,
   type ScanResult,
+  type TypeStyle,
 } from "../scan/types.js";
-import { dimensionKey, keyedColors, keyedStyles, tokenKey } from "./token-names.js";
+import { isNamedStyle, keyedColors, keyedStyles, tokenKey } from "./token-names.js";
 import type { ColorTokenEntry, ColorValue, DesignTokensFile } from "./tokens-schema.js";
 
 /** A group of the file, as the schema types it. */
-type Group<K extends "color" | "typography" | "spacing" | "radius"> = NonNullable<DesignTokensFile[K]>;
+type Group<K extends "color" | "typography"> = NonNullable<DesignTokensFile[K]>;
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const channel = (hex: string, at: number) => round(Number.parseInt(hex.slice(at, at + 2), 16) / 255);
@@ -36,11 +40,10 @@ export function colorValue(hex: string): z.input<typeof ColorValue> {
 }
 
 function colorEntry(color: ColorToken): z.input<typeof ColorTokenEntry> {
-  const where = color.kind === "inline" ? "Written without a name in" : "From";
   return {
     $type: "color",
     $value: colorValue(color.light),
-    $description: `${where} ${color.source}, ${uses(color.uses)}`,
+    $description: `From ${color.source}, ${uses(color.uses)}`,
     $extensions: {
       designmap: {
         ...(color.reference ? { reference: color.reference } : {}),
@@ -53,19 +56,20 @@ function colorEntry(color: ColorToken): z.input<typeof ColorTokenEntry> {
   };
 }
 
-function colors(tokens: DesignTokens): Group<"color"> {
+/** Keys are given among every colour, as DESIGN.md gives them, so a colour has one key in both files. */
+function colors(all: ColorToken[]): Group<"color"> {
   const group: Group<"color"> = { $description: "Most used first" };
-  for (const { color, key } of keyedColors(tokens.colors)) group[key] = colorEntry(color);
+  for (const { color, key } of keyedColors(all)) if (color.kind !== "inline") group[key] = colorEntry(color);
   return group;
 }
 
 /** Each text style as a group of the values the code sets. A DTCG typography token needs line height and letter
  * spacing too, which the code rarely sets, so the values stand as their own tokens rather than as one invented. */
-function typography(tokens: DesignTokens, platform: Platform | undefined): Group<"typography"> {
+function typography(all: TypeStyle[], platform: Platform | undefined): Group<"typography"> {
   const group: Group<"typography"> = { $description: "Most used first" };
-  for (const { style, key, values } of keyedStyles(tokens.typeStyles, platform)) {
+  for (const { style, key, values } of keyedStyles(all, platform)) {
     const { fontFamily, fontSize, fontWeight } = values;
-    if (!fontFamily && fontSize === undefined && fontWeight === undefined) continue;
+    if (!isNamedStyle(style) || (!fontFamily && fontSize === undefined && fontWeight === undefined)) continue;
     group[key] = {
       $description: `${style.name}, ${uses(style.uses)}`,
       $extensions: {
@@ -80,13 +84,6 @@ function typography(tokens: DesignTokens, platform: Platform | undefined): Group
       ...(fontWeight !== undefined ? { fontWeight: { $type: "fontWeight", $value: fontWeight } } : {}),
     };
   }
-  return group;
-}
-
-function dimensions(prefix: string, values: number[], description: string): Group<"spacing"> {
-  const group: Group<"spacing"> = { $description: description };
-  for (const v of [...values].sort((a, b) => a - b))
-    group[dimensionKey(prefix, v)] = { $type: "dimension", $value: px(v) };
   return group;
 }
 
@@ -118,23 +115,15 @@ function withTokens(file: DesignTokensFile, framework: FrameworkScan): DesignTok
   const { tokens } = framework;
   const platform = framework.platforms[0];
   if (platform && file.$extensions) file.$extensions.designmap.platform = platform;
-  if (tokens.colors.length) file.color = colors(tokens);
-  const type = typography(tokens, platform);
+  const color = colors(tokens.colors);
+  if (Object.keys(color).length > 1) file.color = color;
+  const type = typography(tokens.typeStyles, platform);
   if (Object.keys(type).length > 1) file.typography = type;
-  if (tokens.fonts.length) {
-    file.fontFamily = Object.fromEntries(
-      tokens.fonts.map((f) => [tokenKey(f), { $type: "fontFamily", $value: f }]),
-    );
-  }
-  if (tokens.spacing.length) {
-    file.spacing = dimensions(
-      "space",
-      tokens.spacing,
-      "Every spacing value the UI code uses, smallest first",
-    );
-  }
-  if (tokens.radii.length) {
-    file.radius = dimensions("radius", tokens.radii, "Every corner radius the UI code uses, smallest first");
+  // A family only styles written in place use is left out; one no style names, a helper mixing several, is kept.
+  const inFamily = (f: string) => tokens.typeStyles.filter((s) => s.family === f);
+  const fonts = tokens.fonts.filter((f) => inFamily(f).length === 0 || inFamily(f).some(isNamedStyle));
+  if (fonts.length) {
+    file.fontFamily = Object.fromEntries(fonts.map((f) => [tokenKey(f), { $type: "fontFamily", $value: f }]));
   }
   return file;
 }

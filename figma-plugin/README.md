@@ -44,7 +44,7 @@ one records the token's identity, so the next sync finds it under any name, and 
 (`Theme.surface`) as a variable's iOS code syntax and in its description.
 
 It also draws the design system on a page of the same name: a swatch for each colour, linked to its variable, in
-Light and, when it differs, Dark; a sample of each text style, largest first; and the spacing and radius scales. The
+Light and, when it differs, Dark; and a sample of each text style, largest first. The
 page is redrawn on every Apply. Only Designmap's own frame changes, where you last moved it, so anything you add to
 the page outside that frame stays; anything added inside it is replaced.
 
@@ -60,5 +60,3 @@ On each sync:
   Apply tries to add the Dark mode again.
 - Text styles whose font this file doesn't have are left out, and named in the plan.
 - Variables and styles a designer made are left alone, and so are descriptions and publishing choices a designer set.
-
-Colours the code uses without naming them are grouped under `color/Unnamed`.
