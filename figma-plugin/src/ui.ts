@@ -2,23 +2,25 @@
  * side to apply it. */
 
 import { type PlanSummary, type RepoSource, type ToPlugin, toWindow } from "./messages.js";
+import { designToCode, isDesignToCode } from "./ui-design-to-code.js";
+import { element } from "./ui-elements.js";
 
 /** The window's element with `id`, which ui.html must have, of the kind expected. */
-function element<T extends HTMLElement>(id: string, kind: new () => T): T {
+function byId<T extends HTMLElement>(id: string, kind: new () => T): T {
   const found = document.getElementById(id);
   if (!(found instanceof kind)) throw new Error(`ui.html has no ${kind.name} #${id}`);
   return found;
 }
 
-const connectForm = element("connect", HTMLElement);
-const connected = element("connected", HTMLElement);
-const connectedTo = element("connected-to", HTMLSpanElement);
-const refresh = element("refresh", HTMLButtonElement);
-const disconnect = element("disconnect", HTMLButtonElement);
-const connectButton = element("connect-button", HTMLButtonElement);
-const file = element("file", HTMLInputElement);
-const result = element("result", HTMLDivElement);
-const apply = element("apply", HTMLButtonElement);
+const connectForm = byId("connect", HTMLElement);
+const connected = byId("connected", HTMLElement);
+const connectedTo = byId("connected-to", HTMLSpanElement);
+const refresh = byId("refresh", HTMLButtonElement);
+const disconnect = byId("disconnect", HTMLButtonElement);
+const connectButton = byId("connect-button", HTMLButtonElement);
+const file = byId("file", HTMLInputElement);
+const result = byId("result", HTMLDivElement);
+const apply = byId("apply", HTMLButtonElement);
 
 const send = (message: ToPlugin) => parent.postMessage({ pluginMessage: message }, "*");
 
@@ -27,31 +29,24 @@ let requested = 0;
 let shown: number | undefined;
 /** The repo connected, named in the window's status lines. */
 let connectedRepo: string | undefined;
+/** The design-to-code part of the plan on screen, if it found changes made in Figma. */
+let changedInFigma: ReturnType<typeof designToCode> | undefined;
 
-/** A heading and a list, built from text only so a token's name can never be read as markup. */
+/** A heading and a list of `items`. */
 function section(title: string, items: readonly string[]): HTMLElement {
-  const block = document.createElement("section");
-  const heading = document.createElement("h2");
-  heading.textContent = `${title} (${items.length})`;
-  const list = document.createElement("ul");
-  for (const item of items) {
-    const row = document.createElement("li");
-    row.textContent = item;
-    list.append(row);
-  }
-  block.append(heading, list);
+  const block = element("section");
+  const list = element("ul");
+  list.append(...items.map((item) => element("li", item)));
+  block.append(element("h2", `${title} (${items.length})`), list);
   return block;
 }
 
-function paragraph(text: string, className = ""): HTMLElement {
-  const p = document.createElement("p");
-  p.className = className;
-  p.textContent = text;
-  return p;
-}
+const paragraph = (text: string, className = "") => element("p", text, className);
 
 function showPlan(id: number, summary: PlanSummary): void {
   shown = id;
+  changedInFigma =
+    summary.figmaChanges.length > 0 ? designToCode(id, summary, connectedRepo, send) : undefined;
   const blocks = [
     ["New", summary.create],
     ["Changed", summary.update],
@@ -72,6 +67,7 @@ function showPlan(id: number, summary: PlanSummary): void {
     ...blocks.filter(([, items]) => items.length > 0).map(([title, items]) => section(title, items)),
     paragraph(`${summary.unchanged} unchanged.`),
     ...notes.filter(([shows]) => shows).map(([, text]) => paragraph(text, "note")),
+    ...(changedInFigma ? [changedInFigma.section] : []),
   );
   apply.disabled = !summary.applicable;
 }
@@ -79,6 +75,7 @@ function showPlan(id: number, summary: PlanSummary): void {
 /** Starts a new plan: what was on screen can no longer be applied. */
 function nextPlan(status: string): number {
   shown = undefined;
+  changedInFigma = undefined;
   apply.disabled = true;
   result.replaceChildren(paragraph(status));
   return ++requested;
@@ -86,19 +83,19 @@ function nextPlan(status: string): number {
 
 const checking = (repo: string | undefined) => `Checking ${repo ?? "the repo"} for changes…`;
 
-/** Shows the repo connected, or the form to connect one. Any typed token is cleared: it's never shown again. */
-/** Shows the connected repo, or the form to connect one, filled with the repo the file syncs from when it's `saved`. */
+/** Shows the connected repo, or the form to connect one, filled with the repo the file syncs from when it's `saved`.
+ * Any typed token is cleared: it's never shown again. */
 function showConnection(source: RepoSource | null, saved?: RepoSource): void {
   connectedRepo = source?.repo;
-  for (const [id, value] of Object.entries(saved ?? {})) element(id, HTMLInputElement).value = value;
+  for (const [id, value] of Object.entries(saved ?? {})) byId(id, HTMLInputElement).value = value;
   connectForm.hidden = source !== null;
   connected.hidden = source === null;
   connectedTo.textContent = source ? `Connected to ${source.repo} (${source.branch})` : "";
-  element("token", HTMLInputElement).value = "";
+  byId("token", HTMLInputElement).value = "";
   result.replaceChildren(...(source ? [paragraph(checking(source.repo))] : []));
 }
 
-const field = (id: string) => element(id, HTMLInputElement).value.trim();
+const field = (id: string) => byId(id, HTMLInputElement).value.trim();
 
 connectButton.addEventListener("click", () => {
   const repo = field("repo");
@@ -137,10 +134,10 @@ apply.addEventListener("click", () => {
   if (shown === undefined) return;
   apply.disabled = true;
   setApplying(true);
-  send({ type: "apply", id: shown });
+  send({ type: "apply", id: shown, keepCode: changedInFigma?.keepCode() ?? [] });
   shown = undefined;
 });
-element("close", HTMLButtonElement).addEventListener("click", () => send({ type: "close" }));
+byId("close", HTMLButtonElement).addEventListener("click", () => send({ type: "close" }));
 
 window.onmessage = (event: MessageEvent<unknown>) => {
   const data = event.data;
@@ -149,15 +146,17 @@ window.onmessage = (event: MessageEvent<unknown>) => {
   );
   if (!message) return;
   if (message.type === "connection") return showConnection(message.repo, message.saved);
+  if (isDesignToCode(message)) return changedInFigma?.receive(message);
   if (message.type === "plan" && message.id !== requested) return;
   setApplying(false);
+  if (message.type !== "plan") changedInFigma = undefined;
   if (message.type === "plan") showPlan(message.id, message.summary);
   else if (message.type === "applied") {
     const done = message.notes.length
       ? "Synced, with the notes below."
       : "Synced. Your variables and text styles now match the code.";
     result.replaceChildren(paragraph(done), ...message.notes.map((note) => paragraph(note, "note")));
-  } else {
+  } else if (message.type === "error") {
     shown = undefined;
     apply.disabled = true;
     result.replaceChildren(paragraph(message.message, "error"));

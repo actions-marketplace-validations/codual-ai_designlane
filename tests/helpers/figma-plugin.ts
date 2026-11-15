@@ -16,8 +16,9 @@ export function plugin(options?: FakeOptions) {
     if (message?.type !== "plan") throw new Error(`expected a plan, got ${JSON.stringify(message)}`);
     return message.summary;
   }
-  async function apply(): Promise<string[]> {
-    await session({ type: "apply", id: picks });
+  /** Presses Apply, with the changes made in Figma the designer set back to the code's value. */
+  async function apply(keepCode: string[] = []): Promise<string[]> {
+    await session({ type: "apply", id: picks, keepCode });
     const message = last();
     if (message?.type !== "applied") throw new Error(`expected applied, got ${JSON.stringify(message)}`);
     return message.notes;
@@ -61,3 +62,40 @@ export const rgb = (hex: string) => ({
   b: Number.parseInt(hex.slice(5, 7), 16) / 255,
   a: 1,
 });
+
+/** A designer setting a colour variable's Light or Dark value. */
+export function recolor(
+  fake: Fake,
+  name: string,
+  mode: "Light" | "Dark",
+  hex: string,
+  collectionName = "Designmap",
+) {
+  const collection = [...fake.collections.values()].find((c) => c.name === collectionName);
+  const modeId = collection?.modes.find((m) => m.name === mode)?.modeId;
+  const variable = collection?.variableIds
+    .map((id) => fake.variables.get(id))
+    .find((candidate) => candidate?.name === name);
+  if (!variable || !modeId) throw new Error(`no ${name} with a ${mode} mode in ${collectionName}`);
+  variable.valuesByMode[modeId] = rgb(hex);
+}
+
+export interface StyleChange {
+  family?: string;
+  style?: string;
+  size?: number;
+}
+
+/** A designer setting a text style's family, style or size. */
+export async function restyle(fake: Fake, name: string, change: StyleChange) {
+  const style = styleNamed(fake, name);
+  if (change.family || change.style) {
+    const font = {
+      family: change.family ?? style.fontName.family,
+      style: change.style ?? style.fontName.style,
+    };
+    await fake.api.loadFontAsync(font);
+    style.fontName = font;
+  }
+  if (change.size) style.fontSize = change.size;
+}
