@@ -8,7 +8,7 @@
 and it reads the colours and text styles your code names, so your design tool's variables and text styles update with
 every push.
 
-![A Figma file synced by Designmap: each colour from the code as a variable with its light and dark values, and the text styles](.github/assets/hero.png)
+https://github.com/user-attachments/assets/e6324208-a820-4d70-b27a-24a0337e082c
 
 *An app's design system in Figma, synced from its code: each colour with its light and dark value and how the code
 names it (`Theme.accent`).*
@@ -232,8 +232,8 @@ outside the app. Add Designmap to the library's repo instead, and connect your d
 
 ## Status
 
-Version 0.1. Designmap reads SwiftUI, Jetpack Compose and React Native apps and syncs to Figma. Feedback and issues
-are welcome.
+Version 0.2. Designmap reads SwiftUI, Jetpack Compose and React Native apps, syncs to Figma, and turns changes made
+in Figma into pull requests. Feedback and issues are welcome.
 
 ## License
 
