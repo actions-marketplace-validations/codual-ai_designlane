@@ -19,6 +19,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the way, under `via`. A value worked out from another (`Brand.copy(alpha = 0.5f)`), or set where a helper is used,
   records none, as does a style made from a helper (`.small.bold()`), whose values are the helper's, and a family
   built as a template. Also on the scan's `ColorToken` and `TypeStyle` as `locations`.
+- `designmap edit <token> <property> <value>`: changes a colour's light or dark value, or a text style's family, size
+  or weight, in the code where tokens.json says it's written, written the way the code writes it (hex case and
+  length, `0xFF…` ARGB, `Color(red:green:blue:)` with the same decimals or `/ 255`, `rgb()`, asset catalog
+  components, `22.sp`, `.semibold`, `FontWeight.SemiBold`, `"600"`), and prints the diff; `--dry-run` writes
+  nothing. A colour reached through a name gets its own value in place of the name, so the name's other users keep
+  theirs, when that value is in the same file and stands on its own there. It refuses, with the reason, whatever it can't change safely: a value the code changed since the scan, a
+  named or computed colour, a font's name holding its weight, a change that would also change another token (written
+  in the same place or reaching it through names), a value that can't be copied in place of a name safely, or a
+  text style's value from a style it builds on. `planEdit` and `applyEdit` are exported for other tools.
 
 ### Changed
 
