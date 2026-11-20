@@ -19,6 +19,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./read": {
+      "types": "./dist/read/index.d.ts",
+      "default": "./dist/read/index.js"
     }
   },
   "files": [
@@ -36,7 +40,9 @@
     "lint": "biome check --error-on-warnings .",
     "format": "biome format --write .",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm build:plugin",
-    "build:plugin": "node figma-plugin/build.mjs"
+    "build:plugin": "node figma-plugin/build.mjs",
+    "prepack": "node scripts/npm-readme.mjs pack",
+    "postpack": "node scripts/npm-readme.mjs restore"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

@@ -20,8 +20,8 @@ names it (`Theme.accent`).*
   with you. Bring your own coding agent only if you want to.
 
 > [!NOTE]
-> Designlane works with **Figma** today, with **Penpot** and **Sketch** next. It writes standard W3C design tokens,
-> which Tokens Studio and Style Dictionary already import.
+> Designlane works with **Figma** today, with **Penpot** and **Sketch** next. Tokens are written in the W3C design
+> tokens format, which most design-token tools can read.
 
 Designlane was called Designmap until 0.3.0: what it set up then keeps working (see the [changelog](CHANGELOG.md)).
 
@@ -97,6 +97,7 @@ system as swatches and type samples.
 | Colours | Every colour the code names, from asset catalogs, theme objects, colour resources and Tailwind, as Figma variables |
 | Light and dark | A colour's light and dark values as one variable with two modes |
 | Text styles | The app's type scale and named styles: family, size and weight, as Figma text styles |
+| Spacing and corner radii | The scales the code names (`AppSpacing.large`, `spacing.md`), as Figma number variables for gaps and corners |
 | A plan you apply | What's new, what changed and what the code no longer uses, each with how the code refers to it |
 | Safe renames | A token renamed in the code, or a whole theme renamed, keeps its variable and every design using it |
 | Several themes | An app whose users pick a theme gets a Figma collection for each, with Light and Dark modes |
@@ -124,7 +125,7 @@ out of date. Use `--no-write` to see what Designlane finds without writing any f
 
 `designlane/drift.md` lists where the UI code skips the design system, each with its file and line, and the agent can
 check its own changes with `check_drift`. Designlane names a colour or text style to use when one matches; for spacing
-and corners it says which value the code uses often nearby, since it doesn't read named spacing tokens. Theme and
+and corners it says which value the code uses often nearby, not yet which named step to use. Theme and
 token files (`Theme.kt`, `AppColors.swift`, `theme/`) and previews are left out, as values belong there.
 
 ## Unusual setup? Let your coding agent read it
@@ -170,6 +171,41 @@ colour is a named or computed one (`.white`, `Brand.copy(alpha = 0.5f)`), the we
 there), a value can't be copied in place of a name safely (it's in another file, or Swift's `.init(…)`), or a text
 style's value comes from a style it builds on. `--tokens` is read relative to `--dir`.
 
+## Use it as a library
+
+`designlane/read` answers questions about an app's code from your own tool, offline and with the same answer every
+time: no AI, no network, and none of the command line or the Figma sync is loaded.
+
+```ts
+import { readApp } from "designlane/read";
+
+const app = await readApp("path/to/app");
+app.tokensIn("Shop/Views/Card.swift");
+// { colors: [{ token: { key: "brand", reference: "Color.brand" }, value: "#3366e6", span: { file, line, start, end } }, …],
+//   typeStyles, fonts, spacing, radii }
+const variant = await app.withChanges({ "Shop/Theme.swift": newText }); // the app is left as it was
+variant.tokensIn("Shop/Views/Card.swift");
+```
+
+- `tokensIn(path, text?)` lists every colour, text style, font, spacing and corner radius one file uses, in the order
+  they're written: the named token each one is, if it is one, its value, and exactly where it's written. Colours are
+  lowercase `#rrggbb`, or `#rrggbbaa` when not fully opaque. Pass `text` to read a version of the file that isn't on
+  disk. A color read through the theme the user picks (`theme.tintColor`) is `themed`, with its default theme's
+  value; one from a theme declared in a library is `unresolved`, with no value.
+- `filesFor(screen)` lists the files that explain a screen or component, each with why: where it's declared, the
+  views it places at any depth, the types holding its state (`CartViewModel`), the project's files a React Native
+  screen imports, and where the tokens it uses are declared. For giving an agent or a variant generator what it needs
+  to change a screen, and no more.
+- `withChanges(files)` gives a view of the app with some files changed (or `null` for deleted), reading only those
+  files again; a view that changes a theme names its tokens by the new theme. Views can be made from views.
+- `update(path, text)` changes the app itself, for a working tree being edited.
+- `findFrameworks(root)` says which frameworks an app is built with from its file names and manifests, before it's
+  read.
+
+Reading a file takes a few milliseconds (about 20 ms for a 2,000-line one) and a view of a few changed files about
+as long; `readApp` takes as long as a scan. The first `filesFor` parses the app's code once (about 100 ms for 400
+screens), and each one after takes as long as reading the screen's files. Every result has a zod schema exported beside it.
+
 ## Supported
 
 | | Today | Next |
@@ -177,14 +213,18 @@ style's value comes from a style it builds on. `--tokens` is read relative to `-
 | **Code** | SwiftUI, Jetpack Compose, React Native | more to come |
 | **Design tools** | Figma | Penpot, Sketch |
 | **Direction** | code to design; design to code, from Figma as a pull request ([plugin](figma-plugin/README.md#changes-made-in-figma)) or with `designlane edit` | |
-| **Token formats** | W3C design tokens (Tokens Studio, Style Dictionary) | |
+| **Token formats** | W3C design tokens | |
 
 ## What it reads
 
 The design system is what the code names: a colour declared with a name (`Theme.surface`, an asset, a colour
-resource) and a text style the code defines (a typography style, the app's own font helper). Values written in place
-in a screen's layout, and spacing and corner radii, are listed in `DESIGN.md`, so editing a screen doesn't change your
-design system.
+resource), a text style the code defines (a typography style, the app's own font helper), and a spacing or corner
+radius scale (`enum AppSpacing { static let large: CGFloat = 16 }`, `object Radii { val card = 12.dp }`,
+`export const spacing = { md: 12 }`). Values written in place in a screen's layout (`.padding(16)`) are listed in
+`DESIGN.md`, so editing a screen doesn't change your design system.
+
+A scale counts when it has two or more steps and code outside its own file uses one by name: a screen's own constants
+(an enum nested in a view, `private` members, `rowHeight`) aren't the app's scale.
 
 - **SwiftUI:** asset catalog colours, colours declared in code, the app's own font helpers and text styles.
 - **Jetpack Compose:** the Material colour scheme (each role with its Light and Dark value), the type scale and named

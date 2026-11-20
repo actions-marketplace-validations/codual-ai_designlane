@@ -146,13 +146,43 @@ export interface TypeStyle {
   uses: number;
   /** Where a named style's values are written, each one the style sets in one place. */
   locations?: TypeLocations;
+  /** What the style doesn't set, which the text takes from around it (a parent's style, the app's default font):
+   * `family` and `weight` here are then the platform's defaults, and left out of tokens. */
+  inherits?: Inherited[];
 }
+
+/** A text style's values the code can leave to the text around it. */
+export const INHERITABLE = ["family", "weight"] as const;
+export type Inherited = (typeof INHERITABLE)[number];
 
 /** One of the app's themes beside its default one (`Desert` beside `Ocean`): the same colours, each with its own
  * Light and Dark value. */
 export interface ColorTheme {
   name: string;
   colors: ColorToken[];
+}
+
+/** A spacing or corner radius the code names as one step of a scale: `AppSpacing.large`, `spacing.md`. */
+export interface ScaleStep {
+  /** Its name in the scale: `large`, `md`. */
+  name: string;
+  /** In points (dp on Android). */
+  value: number;
+  /** How the code refers to it, which a sync knows it by: `AppSpacing.large`, `theme.spacing.md`. */
+  reference: string;
+  /** The file it's declared in. */
+  source: string;
+  line: number;
+  /** How many places in the code use it by name. */
+  uses: number;
+  /** Where its value is written. */
+  location: ValueLocation;
+}
+
+/** The spacing and corner radius scales the code names, each smallest first. */
+export interface NamedScales {
+  spacing: ScaleStep[];
+  radii: ScaleStep[];
 }
 
 export interface DesignTokens {
@@ -170,6 +200,8 @@ export interface DesignTokens {
   spacing: number[];
   /** Every corner radius, most common first. */
   radii: number[];
+  /** The spacing and radius scales the code names; present only when it names one. */
+  scales?: NamedScales;
 }
 
 export interface FrameworkScan {

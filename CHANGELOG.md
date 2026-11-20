@@ -3,6 +3,49 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `designlane/read`, a library entry for reading an app's code from another tool: `readApp(root)` reads the app once;
+  `app.tokensIn(path, text?)` lists every colour, text style, font, spacing and corner radius one file uses, named
+  token or value written in place, each with its exact span; `app.withChanges(files)` gives a copy-on-write view with
+  some files changed, reading only those again; `app.update(path, text)` changes the app itself; and
+  `findFrameworks(root)` tells an app's frameworks from file names and manifests alone. Offline and deterministic,
+  with a zod schema for every result, and none of the command line, MCP server or Figma sync loaded.
+- Spacing and corner radius scales the code names sync to Figma as number variables, scoped to gaps and to corners:
+  a Swift type of that name (`enum AppSpacing`, `Theme.CornerRadius`), a Kotlin object or data class
+  (`object Radii { val card = 12.dp }`, `LocalSpacing.current.medium`), or an exported JavaScript object
+  (`export const space = { md: 8 }`, `theme.radii.card`). Each step in tokens.json records how the code refers to
+  it, its uses and where its value is written, so a changed value updates its variable and a renamed step keeps it.
+  A scale needs two steps and a use outside its own file; steps marked deprecated, and sizes (`rowHeight`), are left
+  out. Values written in place stay in DESIGN.md only, as before. A Figma file an older version synced with bare spacing
+  variables (`spacing/16`) has each renamed to the named step with its value.
+- DESIGN.md and catalog.html show the named scales with each step's reference and uses, then the values written in
+  place.
+
+- `tokensIn` names a color the app's themes declare when the code reads it through the theme the user picks
+  (`theme.tintColor`), with its default theme's value and `themed: true`; and a color or text style read from a theme
+  declared in a library (`CompanyTheme.colors.primary`) as `unresolved`, named as the code writes it, with no value.
+- `app.filesFor(screen)` lists the files that explain a screen or component, each with why: its declaration, the
+  views it places at any depth, the types holding its state, the project's files a React Native screen imports, and
+  where the tokens it uses are declared. Views answer for their changes, following a view in a file they add.
+
+### Changed
+
+- A React Native or Tailwind text style that sets no font family or weight takes them from the text around it, so
+  they're no longer written as the platform's font and the regular weight (`SF Pro`, 400): tokens.json, Figma and
+  DESIGN.md leave them out, and the scan records them under `inherits`. A style in Figma keeps the font it has. A
+  text style a coding agent gives without a weight is no longer taken for the regular one.
+- Scans read Swift and Kotlin a little faster: a file with no `#Preview` isn't searched for one, and comments and
+  strings are blanked in runs rather than one character at a time.
+
+### Fixed
+
+- A Swift colour given its opacity keeps it: `UIColor(0x000000, alpha: 0.05)` and `UIColor(hex: "#3366CC", alpha: 0.3)`
+  were read as opaque, and so was a colour with `.withAlphaComponent(0.7)` (which sets the opacity) or `.opacity(0.5)` (which multiplies it) after it. A colour whose opacity is an expression (`alpha: 0.5 * fade`) is left out, not read as opaque. A colour with opacity chained after it records no place its value is written, so an edit
+  refuses it rather than changing the colour without its opacity.
+
 ## 0.3.1 - 2026-11-16
 
 ### Fixed
