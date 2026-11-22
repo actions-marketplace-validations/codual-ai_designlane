@@ -1,7 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { writeOutputs } from "../output/write.js";
+import {
+  applyMap,
+  isMap,
+  UNCONFIRMED_KINDS,
+  type Unconfirmed,
+  type UnconfirmedKind,
+} from "../scan/agent-map.js";
 import { mergeAgentTokens } from "../scan/agent-tokens.js";
 import { plural } from "../scan/counting.js";
 import { isFolder, readGaps } from "../scan/files.js";
@@ -82,15 +89,34 @@ async function map(
   for (const note of scanNotes(scan)) error(`designlane: ${note}`);
   const agentFile = values["from-agent"];
   if (agentFile) {
-    const merge = await fromAgent(scan, path.resolve(agentFile));
-    scan = merge.scan;
+    const json = await agentJson(path.resolve(agentFile));
     // With --json, stdout is the scan alone.
-    (values.json ? error : out)(`Added ${plural(merge.added, "token")} from ${agentFile}`);
-    if (merge.dropped.length) {
-      const some = merge.dropped.slice(0, 5).join(", ");
-      error(
-        `designlane: left out ${plural(merge.dropped.length, "token")} the code doesn't bear out: ${some}${merge.dropped.length > 5 ? ", …" : ""}`,
-      );
+    const say = values.json ? error : out;
+    if (isMap(json)) {
+      const reading = await usage(() => applyMap(scan, json));
+      scan = reading.scan;
+      say(`Confirmed ${plural(reading.confirmed, "token")} of ${agentFile} where it says they're written`);
+      for (const line of leftOut(reading.unconfirmed)) error(line);
+      // Every entry left out, for the agent to fix its map by: as many as there are, which the lines above group.
+      if (!values["no-write"]) {
+        const check = path.join(path.dirname(path.resolve(agentFile)), CHECK_FILE);
+        await writeFile(
+          check,
+          `${JSON.stringify({ confirmed: reading.confirmed, unconfirmed: reading.unconfirmed }, null, 2)}\n`,
+        );
+        if (reading.unconfirmed.length > 0)
+          error(`designlane: every entry left out, with where and why: ${shown(check)}`);
+      }
+    } else {
+      const merge = await usage(() => mergeAgentTokens(scan, json));
+      scan = merge.scan;
+      say(`Added ${plural(merge.added, "token")} from ${agentFile}`);
+      if (merge.dropped.length) {
+        const some = merge.dropped.slice(0, 5).join(", ");
+        error(
+          `designlane: left out ${plural(merge.dropped.length, "token")} the code doesn't bear out: ${some}${merge.dropped.length > 5 ? ", …" : ""}`,
+        );
+      }
     }
   }
   if (values.json) return done(out, JSON.stringify(scan, null, 2));
@@ -110,15 +136,39 @@ async function map(
   return 0;
 }
 
-async function fromAgent(scan: ScanResult, file: string) {
-  let json: unknown;
+/** The file beside the agent's map that lists every entry the code doesn't bear out. */
+export const CHECK_FILE = "agent-check.json";
+
+/** The entries left out, a line for each kind of reason, most first, with one for example: a few lines, however many
+ * there are. */
+function leftOut(unconfirmed: Unconfirmed[]): string[] {
+  if (unconfirmed.length === 0) return [];
+  const kinds = new Map<UnconfirmedKind, Unconfirmed[]>();
+  for (const u of unconfirmed) kinds.set(u.kind, [...(kinds.get(u.kind) ?? []), u]);
+  const groups = [...kinds].sort((a, b) => b[1].length - a[1].length);
+  const width = String(groups[0]?.[1].length ?? 0).length;
+  return [
+    `designlane: left out ${plural(unconfirmed.length, "entry", "entries")} the code doesn't bear out:`,
+    ...groups.map(([kind, entries]) => {
+      const [first] = entries;
+      const example = first ? `, like ${first.reference} (${first.at}): ${first.why}` : "";
+      return `  ${String(entries.length).padStart(width)}  ${UNCONFIRMED_KINDS[kind]}${example}`;
+    }),
+  ];
+}
+
+async function agentJson(file: string): Promise<unknown> {
   try {
-    json = JSON.parse(await readFile(file, "utf8"));
+    return JSON.parse(await readFile(file, "utf8"));
   } catch (e) {
     throw new UsageError(`couldn't read ${file}: ${(e as Error).message}`, 1);
   }
+}
+
+/** `read`'s result, or its error as a mistake in how the command was run. */
+async function usage<T>(read: () => Promise<T>): Promise<T> {
   try {
-    return await mergeAgentTokens(scan, json);
+    return await read();
   } catch (e) {
     throw new UsageError((e as Error).message, 1);
   }

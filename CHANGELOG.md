@@ -3,6 +3,18 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A coding agent's map of the design system: `designlane --from-agent` reads an `agent.json` of version 1, which gives
+  each color (with its dark value and its themes), text style, spacing and corner radius with the file and line it's
+  written on. Designlane reads each value there with its own readers, following a color written as another's name
+  (`primary = Purple40`), and keeps only those the code bears out, saying where and why for the rest. The map's tokens
+  then are the app's design system: of each kind the map gives, Designlane's own named tokens give way to it. What's
+  left out is summed up a line per kind of reason, and `designlane/agent-check.json` lists every entry with its place,
+  a stable `kind` and why, for the agent to fix its map by. An `agent.json` without a version is read as before.
+
 ## 0.5.0 - 2026-11-22
 
 ### Added
