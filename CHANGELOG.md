@@ -27,6 +27,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `layoutOf` reads a Compose function the scan lists that's annotated as a preview (`@Composable @Preview fun …`),
   which had no layout: a preview, or a real composable given `@Preview` too.
 
+### Fixed
+
+- `stringsIn` keeps the spaces React shows in JSX text: `<Text>{price} / {period}</Text>` is " / ", not "/", and
+  `<Text>  Your cart </Text>` keeps its spaces. Only whitespace with a line break in it, at a line's start or end, is
+  left out, as React leaves it out.
+
 ## 0.4.0 - 2026-11-21
 
 ### Added
