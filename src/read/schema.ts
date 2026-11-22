@@ -98,3 +98,121 @@ export const StringUseSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type StringUse = z.infer<typeof StringUseSchema>;
+
+/** What a node of a screen's layout is: a container laying out its children, a decision or a loop over them, a view
+ * of the app placed there, or an element shown. `other` is an element none of these name, or a branch or item of
+ * several. */
+export const LAYOUT_KINDS = [
+  "stack-v",
+  "stack-h",
+  "stack-z",
+  "grid",
+  "list",
+  "lazy-list",
+  "lazy-grid",
+  "scroll",
+  "tabs",
+  "nav",
+  "form",
+  "section",
+  "toolbar",
+  "repeat",
+  "conditional",
+  "view-ref",
+  "text",
+  "button",
+  "image",
+  "input",
+  "spacer",
+  "other",
+] as const;
+export type LayoutKind = (typeof LAYOUT_KINDS)[number];
+
+/** A node of a screen's layout, and the nodes inside it, in the order written. */
+export interface LayoutNode {
+  /** Its path from the screen, by kind: `stack-v/list/text.1` is the second text of the list of the screen's stack.
+   * It stays the same when other kinds of nodes are added or removed around it. */
+  id: string;
+  kind: LayoutKind;
+  span: z.infer<typeof CodeSpanSchema>;
+  /** For a view-ref, the id of the view placed. */
+  ref?: string | undefined;
+  children: LayoutNode[];
+}
+
+export const LayoutNodeSchema: z.ZodType<LayoutNode> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    kind: z.enum(LAYOUT_KINDS),
+    span: CodeSpanSchema,
+    ref: z.string().optional(),
+    children: z.array(LayoutNodeSchema),
+  }),
+);
+
+/** One of a screen's main parts, as a person picks it to change: its node's `id` in the layout of `view` (the screen,
+ * or the view it's all placed in), a name to show for it, where its code is, and, for a view placed, that view's id. */
+export const ScreenPartSchema = z.object({
+  id: z.string(),
+  view: z.string(),
+  label: z.string(),
+  span: CodeSpanSchema,
+  ref: z.string().exactOptional(),
+});
+export type ScreenPart = z.infer<typeof ScreenPartSchema>;
+
+/**
+ * Why a layout couldn't be read whole. These values stay the same from release to release, so a tool can map each to
+ * its own words:
+ * - `no-declaration`: the view isn't declared where the scan found it.
+ * - `no-body`: it declares no body (`var body`, a composable's block, a component's return).
+ * - `unbalanced`: a bracket in its code is left open, or closes one it didn't open.
+ * - `open-extension`: an extension of a SwiftUI view in its file is left open.
+ * - `parse-error`: TypeScript's parser found an error in its code.
+ * - `too-deep`: its code nests past the reader's limit.
+ * - `too-much-inlined`: its view properties place each other past the reader's limit.
+ */
+export const UNREADABLE_REASONS = [
+  "no-declaration",
+  "no-body",
+  "unbalanced",
+  "open-extension",
+  "parse-error",
+  "too-deep",
+  "too-much-inlined",
+] as const;
+export type UnreadableReason = (typeof UNREADABLE_REASONS)[number];
+
+/**
+ * What may be wrong in a layout that was read. These values stay the same from release to release too:
+ * - `ambiguous-view`: a name places one of several views of the app, and nothing tells which (the name is its
+ *   `detail`).
+ * - `unknown-element`: an element no framework table names, so it's `other` (its name is the issue's `detail`).
+ * - `if-as-written`: a SwiftUI `#if` around more than one block holds, so both its sides are read as shown.
+ * - `self-placed`: a view places itself.
+ * - `unnamed-part`: one of the screen's parts is labelled by its kind, the code naming it nothing (the label is its
+ *   `detail`).
+ * - `no-parts`: a screen whose layout was read has no parts.
+ */
+export const LAYOUT_ISSUE_KINDS = [
+  "ambiguous-view",
+  "unknown-element",
+  "if-as-written",
+  "self-placed",
+  "unnamed-part",
+  "no-parts",
+] as const;
+export type LayoutIssueKind = (typeof LAYOUT_ISSUE_KINDS)[number];
+
+/** Where Designlane falls short on a screen: why its layout couldn't be read whole, if it couldn't (the screen's, or
+ * that of a view its parts are found in), and what may be wrong in one that was, each where it's written. */
+export const LayoutIssuesSchema = z.object({
+  screen: z.string(),
+  unreadable: z
+    .object({ reason: z.enum(UNREADABLE_REASONS), view: z.string(), span: CodeSpanSchema })
+    .exactOptional(),
+  issues: z.array(
+    z.object({ kind: z.enum(LAYOUT_ISSUE_KINDS), span: CodeSpanSchema, detail: z.string().exactOptional() }),
+  ),
+});
+export type LayoutIssues = z.infer<typeof LayoutIssuesSchema>;

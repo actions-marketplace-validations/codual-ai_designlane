@@ -3,7 +3,37 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.5.0 - 2026-11-22
+
+### Added
+
+- `designlane doctor [dir]` lists the screens whose layout Designlane can't read, with where, and sums up what it may
+  read wrong: `--all` lists every issue with where it is, `--screen <name>` shows one screen's issues, parts and
+  layout, and `--json` prints the issues for scripts. It reads offline and sends nothing.
+- `app.layoutIssues(screen)` in `designlane/read`: why a screen's layout can't be read whole (`unreadable`, with its
+  reason, the view and where), and what may be wrong in one that was (`issues`), with `UNREADABLE_REASONS`,
+  `LAYOUT_ISSUE_KINDS` and `LayoutIssuesSchema`. Their values stay the same from release to release.
+- `app.skipped` says what the scan left out: whether it stopped at its limit of files, and the folders it couldn't
+  open. `designlane doctor` warns about them.
+
+### Changed
+
+- `layoutOf` and `screenParts` know more of each framework's elements: SwiftUI's shapes, progress views, gradients,
+  `GroupBox` and image loaders (`KFImage`, `WebImage`, `LazyImage`); Compose's dividers, progress indicators, menu and
+  drawer items, segmented buttons and `Layout`; React Native's `ActivityIndicator`, SVG shapes, icons and a context's
+  `.Provider`, which passes through to what it holds. Snackbars and tooltips are left out, like dialogs. A type's
+  members that are values (`DispatchQueue.main`, `Date.now`) and assignments (`rows += Row { … }`) are no longer read
+  as elements.
+- `layoutOf` reads a Compose function the scan lists that's annotated as a preview (`@Composable @Preview fun …`),
+  which had no layout: a preview, or a real composable given `@Preview` too.
+
+### Fixed
+
+- `stringsIn` keeps the spaces React shows in JSX text: `<Text>{price} / {period}</Text>` is " / ", not "/", and
+  `<Text>  Your cart </Text>` keeps its spaces. Only whitespace with a line break in it, at a line's start or end, is
+  left out, as React leaves it out.
+
+## 0.4.0 - 2026-11-21
 
 ### Added
 
@@ -30,9 +60,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `app.stringsIn(path, text?)` lists the text one file shows people, each with its exact span: words written in the
   code, and translated strings named by key, with their default-language text from the app's strings files, or
   `null` when none has it.
+- `app.layoutOf(screen)` gives a screen's layout as a tree of containers, conditionals, loops, placed views and the
+  elements it shows, each with its span and an id from its path by kind that stays the same when other kinds of
+  nodes are added around it, for comparing two versions of a screen.
+- `app.screenParts(screen)` lists a screen's main parts, for picking one to change, each with its id in its view's
+  layout, a label to show ("Header", "Plans") and its span; following the one view a screen places and the biggest
+  branch of an `if` over all of it.
+- `layoutOf` reads a SwiftUI `#if` as a `conditional` with a branch per clause, rather than both sides as shown, and
+  places the Compose overload whose parameters take a call's arguments, rather than the first of that name.
 - `app.filesFor(screen)` lists the files that explain a screen or component, each with why: its declaration, the
   views it places at any depth, the types holding its state, the project's files a React Native screen imports, and
-  where the tokens it uses are declared. Views answer for their changes, following a view in a file they add.
+  where the tokens it uses are declared. Views answer for their changes, following a view in a file they add, and
+  taking such a view's id.
 
 ### Changed
 
