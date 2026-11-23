@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -95,4 +95,62 @@ describe.skipIf(process.platform === "win32")("the GitHub Action", () => {
     ]);
     expect(commit().stdout).toContain("The design tokens haven't changed.");
   });
+
+  it("checks an agent's map of version 1 into a summary, and an older map's into none, nor a stale one", () => {
+    dir = mkdtempSync(path.join(tmpdir(), "designlane-action-"));
+    const app = path.join(dir, "app");
+    mkdirSync(path.join(app, "App"), { recursive: true });
+    mkdirSync(path.join(app, "designlane"));
+    writeFileSync(
+      path.join(app, "App", "Theme.swift"),
+      'import SwiftUI\nenum Theme {\n  static let surface = Color.white\n}\nstruct S: View { var body: some View { Text("a").foregroundStyle(Theme.surface) } }\n',
+    );
+    const agent = path.join(app, "designlane", "agent.json");
+    const check = path.join(app, "designlane", "agent-check.json");
+    const summary = path.join(dir, "summary.md");
+    // Designlane built as the Action builds it, into a folder of its own: the step runs what's built, not a dist/ an
+    // earlier build left.
+    const designlane = path.join(dir, "designlane-build");
+    const tsc = path.join(process.cwd(), "node_modules", "typescript", "bin", "tsc");
+    execFileSync(
+      process.execPath,
+      [tsc, "-p", "tsconfig.build.json", "--outDir", path.join(designlane, "dist")],
+      {
+        cwd: process.cwd(),
+        stdio: "ignore",
+      },
+    );
+    writeFileSync(
+      path.join(designlane, "package.json"),
+      readFileSync(path.join(process.cwd(), "package.json")),
+    );
+    symlinkSync(path.join(process.cwd(), "node_modules"), path.join(designlane, "node_modules"), "dir");
+    const { script } = step("Write the design tokens");
+    const run = () => {
+      writeFileSync(summary, "");
+      const result = bash(script, app, {
+        DESIGNLANE: designlane,
+        APP: ".",
+        OUT: "designlane",
+        GITHUB_STEP_SUMMARY: summary,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      return readFileSync(summary, "utf8");
+    };
+    writeFileSync(
+      agent,
+      JSON.stringify({
+        version: 1,
+        colors: {
+          "Theme.surface": { light: { value: "#ffffff", at: "App/Theme.swift:3" } },
+          "Theme.gone": { light: { value: "#000000", at: "App/Theme.swift:40" } },
+        },
+      }),
+    );
+    expect(run()).toContain("1 of 2 entries match the code.");
+    // An older, unversioned map writes no check file: the one before it isn't summed up again.
+    writeFileSync(agent, JSON.stringify({ colors: { "Theme.surface": { light: "#ffffff" } } }));
+    expect(run()).toBe("");
+    expect(() => readFileSync(check)).toThrow();
+  }, 120000);
 });
