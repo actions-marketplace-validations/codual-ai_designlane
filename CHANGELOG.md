@@ -7,6 +7,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Constants named for a spacing or a corner radius are named in `scales`, each when code in another file uses it,
+  whatever their container is called: in Compose (`val ThumbnailCornerRadius = 3.dp`, `DEFAULT_PADDING`,
+  `object MailDimens { val SnackbarOuterMargin = 12.dp }`, and shapes, `RoundedCornerShape(12.dp)`), SwiftUI
+  (`enum UIConstants { static let urlBarMargin: CGFloat = 10 }`, and `extension CGFloat` members, used as
+  `.padding(.statusColumnsSpacing)` too, but not a view's own), and React Native (`export const ROW_RADIUS = 10`,
+  `Layout.headerPadding`). Not one declared in a function or as private, nor a time, a score or a fraction.
 - A coding agent's map of the design system: `designlane --from-agent` reads an `agent.json` of version 1, which gives
   each color (with its dark value and its themes), text style, spacing and corner radius with the file and line it's
   written on. Designlane reads each value there with its own readers, following a color written as another's name
@@ -21,7 +27,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   scheme) gets its Material roles from the theme the code names as its default (`AppTheme.DEFAULT to …`,
   `getOrDefault(theme, …)`, `else -> …`), or one named default, not the fullest; and each theme's light scheme pairs
   with its own dark one.
-
 
 ## 0.5.0 - 2026-11-22
 
