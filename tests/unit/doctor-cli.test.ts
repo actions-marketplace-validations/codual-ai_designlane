@@ -1,6 +1,7 @@
 import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { issueLink } from "../../src/cli/doctor.js";
 import { run } from "../../src/cli/run.js";
 import { LayoutIssuesSchema } from "../../src/read/index.js";
 import { swift } from "../helpers/catalog.js";
@@ -36,6 +37,9 @@ const APP = {
   "App/Settings.swift": swift("struct Settings: View { var body: some View { NavigationStack { Feed() } } }"),
 };
 
+// GitHub refuses longer links.
+const MAX_LINK = 7000;
+
 describe("designlane doctor", () => {
   it("lists a view that can't be read once, with the screens placing it, and what may be read wrong", async () => {
     const { code, out } = await designlane("doctor", await tempDir(APP));
@@ -51,7 +55,7 @@ describe("designlane doctor", () => {
       "",
       "2 parts labelled by their kind only (--all lists them)",
       "",
-      "Found something Designlane should read better? Open an issue with the lines above: https://github.com/codual-ai/designlane/issues",
+      "Found something Designlane should read better? designlane doctor --report gives a link to an issue with the lines above: https://github.com/codual-ai/designlane/issues",
     ]);
   });
 
@@ -158,6 +162,105 @@ describe("designlane doctor", () => {
     expect(issues).toHaveLength(3);
     expect(issues.every((i) => LayoutIssuesSchema.safeParse(i).success)).toBe(true);
   });
+
+  it("gives a link to an issue with the report, the framework and the version filled in, with --report", async () => {
+    const { code, out } = await designlane("doctor", await tempDir(APP), "--screen", "Home", "--report");
+    expect(code).toBe(0);
+    const link = out.split("\n").at(-1) ?? "";
+    expect(out).toContain("Designlane sends nothing itself");
+    const url = new URL(link);
+    expect(`${url.origin}${url.pathname}`).toBe("https://github.com/codual-ai/designlane/issues/new");
+    expect(url.searchParams.get("template")).toBe("reads-wrong.yml");
+    expect(url.searchParams.get("title")).toBe("Designlane reads Home wrong");
+    expect(url.searchParams.get("framework")).toBe("SwiftUI");
+    expect(url.searchParams.get("version")).toMatch(/^\d+\.\d+\.\d+/);
+    // The report, and none of what --report adds after it.
+    expect(url.searchParams.get("got")).toBe(out.slice(0, out.indexOf("\n\nFirst check")));
+    // A search for issues already reporting what it found; one screen's report needs no pointer to one.
+    const search = new URL(
+      out
+        .split("\n")
+        .find((l) => l.startsWith("First check"))
+        ?.split(": ")[1] ?? "",
+    );
+    expect(search.searchParams.get("q")).toBe('is:issue "Meter"');
+    expect(out).not.toContain("--screen Home --report");
+  });
+
+  it("titles a whole app's report for the app, and points it at its screen with most issues", async () => {
+    const root = await tempDir(APP);
+    const { out } = await designlane("doctor", root, "--report");
+    expect(linkField(out.split("\n").at(-1) ?? "", "title")).toBe("Designlane reads my app wrong");
+    expect(suggestedCommand(out)).toContain(path.basename(root));
+    expect(suggestedCommand(out)).toMatch(/^designlane doctor .+ --screen Home --report$/);
+  });
+
+  it("names a suggested screen by its id when another view shares its name", async () => {
+    const root = await tempDir({
+      "App/A/Home.swift": swift("struct Home: View { var body: some View { VStack { Meter(); Meter() } } }"),
+      "App/B/Home.swift": swift('struct Home: View { var body: some View { Text("b") } }'),
+    });
+    const { out } = await designlane("doctor", root, "--report");
+    expect(suggestedCommand(out)).toMatch(/ --screen 'swiftui:App\/A\/Home\.swift#Home' --report$/);
+  });
+
+  it("suggests no search or screen for an app with nothing wrong", async () => {
+    const root = await tempDir({
+      "App/A.swift": swift('struct A: View { var body: some View { VStack { Text("a") } } }'),
+    });
+    const { out } = await designlane("doctor", root, "--report");
+    expect(out).not.toContain("First check");
+    expect(out).not.toContain("A screen's report");
+  });
+
+  // The command a report suggests for one screen. The folder in it is quoted where the shell needs it,
+  // as on Windows, so tests look for the folder's name rather than its exact spelling.
+  function suggestedCommand(out: string): string {
+    const prefix = "A screen's report, with where each issue is, is easier to act on: ";
+    const line = out.split("\n").find((each) => each.startsWith(prefix));
+    return line?.slice(prefix.length) ?? "";
+  }
+
+  it("leaves the framework for the person to choose in an app of two, and drops the footer", async () => {
+    const root = await tempDir({
+      ...APP,
+      "app/src/main/java/a/S.kt":
+        'import androidx.compose.runtime.Composable\n@Composable fun S() { Text("a") }',
+    });
+    const { out } = await designlane("doctor", root, "--report");
+    expect(new URL(out.split("\n").at(-1) ?? "").searchParams.has("framework")).toBe(false);
+    expect(out).not.toContain("Found something");
+  });
+
+  it("refuses --report with --json", async () => {
+    expect((await designlane("doctor", await tempDir(APP), "--json", "--report")).code).toBe(2);
+  });
+
+  it("cuts a long report by whole lines to fit a link, saying so", () => {
+    const report = Array.from({ length: 2000 }, (_, i) => `line ${i}`).join("\n");
+    const link = issueLink(report, { version: "0.6.0" });
+    expect(link.length).toBeLessThanOrEqual(MAX_LINK);
+    const lines = linkField(link, "got").split("\n");
+    expect(lines.at(-1)).toBe("… (cut to fit the link)");
+    expect(lines.slice(0, -1).every((line) => /^line \d+$/.test(line))).toBe(true);
+  });
+
+  it("measures a report by its encoded length, so one of wide characters still fits", () => {
+    const report = Array.from({ length: 400 }, () => "界".repeat(40)).join("\n");
+    const link = issueLink(report, { version: "0.6.0" });
+    expect(link.length).toBeLessThanOrEqual(MAX_LINK);
+    expect(linkField(link, "got").split("\n").length).toBeGreaterThan(5);
+  });
+
+  it("keeps a report's title short when the screen is named by a long id", () => {
+    const screen = "swiftui:App/Features/Onboarding/Steps/Welcome/WelcomeStepView.swift#WelcomeStepView";
+    const title = linkField(issueLink("a", { version: "0.6.0", screen }), "title");
+    expect(title).toBe(`Designlane reads ${screen.slice(0, 80)}… wrong`);
+  });
+
+  function linkField(link: string, name: string): string {
+    return new URL(link).searchParams.get(name) ?? "";
+  }
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "says which folders it couldn't open",

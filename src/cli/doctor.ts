@@ -7,12 +7,14 @@ import type { LayoutIssueKind, LayoutIssues, LayoutNode, UnreadableReason } from
 import { plural } from "../scan/counting.js";
 import { isFolder, readGaps } from "../scan/files.js";
 import type { ScreenRef } from "../scan/types.js";
-import { type Output, UsageError } from "./command.js";
+import { FRAMEWORK_NAMES } from "../scan/types.js";
+import { type Output, packageVersion, UsageError } from "./command.js";
 
-export const DOCTOR_USAGE = `  designlane doctor [dir] [--json] [--all] [--screen <name>]
+export const DOCTOR_USAGE = `  designlane doctor [dir] [--json] [--all] [--screen <name>] [--report]
                     List the screens whose layout Designlane can't read, with where, and sum up what it may read
                     wrong. --all lists every issue where it is; --screen shows one screen's issues, parts and
-                    layout; --json prints the issues as JSON, of every screen or of --screen's`;
+                    layout; --json prints the issues as JSON, of every screen or of --screen's; --report adds a link
+                    to a GitHub issue with them filled in, which you check before you send it`;
 
 const ISSUES_URL = "https://github.com/codual-ai/designlane/issues";
 
@@ -76,6 +78,8 @@ export async function doctor(argv: string[], { out, error }: Output): Promise<nu
     if (screens.length === 0) throw new UsageError(`no screen or component named ${name}`, 1);
   }
   const all = screens.map((s) => ({ screen: s, issues: app.layoutIssues(s.id) }));
+  if (values.json && values.report)
+    throw new UsageError(`--report goes with the report, not --json\n\n${DOCTOR_USAGE}`, 2);
   if (values.json)
     out(
       JSON.stringify(
@@ -84,14 +88,138 @@ export async function doctor(argv: string[], { out, error }: Output): Promise<nu
         2,
       ),
     );
-  else if (values.screen !== undefined)
-    out(
-      all
-        .map((a) => detail(a.screen, a.issues, app.layoutOf(a.screen.id), app.screenParts(a.screen.id)))
-        .join("\n\n"),
-    );
-  else out(report(all, values.all === true));
+  else {
+    const text =
+      values.screen !== undefined
+        ? all
+            .map((a) => detail(a.screen, a.issues, app.layoutOf(a.screen.id), app.screenParts(a.screen.id)))
+            .join("\n\n")
+        : report(all, { everything: values.all === true, askToReport: values.report !== true });
+    out(text);
+    if (values.report) out(await reportGuide(text, { all, screen: values.screen, folder: positionals[0] }));
+  }
   return 0;
+}
+
+/** How many of the names doctor found an issue search looks for: the most common. */
+const SEARCHED_NAMES = 5;
+
+/** What `--report` adds after the report: a search for issues already reporting what it found, a pointer to one
+ * screen's report when this is the whole app's, and the link to a new issue with it filled in. */
+async function reportGuide(
+  text: string,
+  {
+    all,
+    screen,
+    folder,
+  }: {
+    all: { screen: ScreenRef; issues: LayoutIssues }[];
+    /** The `--screen` asked for, when it was. */
+    screen: string | undefined;
+    /** The app's folder as the command was given it, when it was. */
+    folder: string | undefined;
+  },
+): Promise<string> {
+  const lines: string[] = [];
+  const names = namesFound(all).slice(0, SEARCHED_NAMES);
+  if (names.length > 0) lines.push("", `First check it isn't reported already: ${issueSearch(names)}`);
+  const worst = screen === undefined ? mostIssues(all) : undefined;
+  if (worst) {
+    const command = ["designlane", "doctor", ...(folder ? [folder] : []), "--screen", worst, "--report"];
+    lines.push(
+      "",
+      `A screen's report, with where each issue is, is easier to act on: ${command.map(shellWord).join(" ")}`,
+    );
+  }
+  const frameworks = [...new Set(all.map((a) => a.screen.framework))];
+  const link = issueLink(text, {
+    version: await packageVersion(),
+    ...(frameworks.length === 1 && frameworks[0] && { framework: FRAMEWORK_NAMES[frameworks[0]] }),
+    ...(screen !== undefined && { screen }),
+  });
+  lines.push(
+    "",
+    "To report it, open this link. Designlane sends nothing itself; the link gives GitHub the lines above, file and screen names included, filled into a new issue. Check them, add the code it reads wrong, and submit it to publish it:",
+    link,
+  );
+  return lines.join("\n");
+}
+
+/** The elements and views doctor's issues name (`FilledIconToggleButton`), the most often named first. */
+function namesFound(all: { issues: LayoutIssues }[]): string[] {
+  const counts = new Map<string, number>();
+  for (const { issues } of all)
+    for (const issue of issues.issues)
+      if (NAMED.has(issue.kind) && issue.detail)
+        counts.set(issue.detail, (counts.get(issue.detail) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+}
+
+/** How `--screen` names the screen with the most issues: by its name, or by its id when another view shares the
+ * name. None when no screen has any. */
+function mostIssues(all: { screen: ScreenRef; issues: LayoutIssues }[]): string | undefined {
+  const issuesOf = (a: { issues: LayoutIssues }) => a.issues.issues.length + (a.issues.unreadable ? 1 : 0);
+  const [worst] = [...all].filter((a) => issuesOf(a) > 0).sort((a, b) => issuesOf(b) - issuesOf(a));
+  if (!worst) return undefined;
+  const shared = all.some((a) => a.screen !== worst.screen && a.screen.name === worst.screen.name);
+  return shared ? worst.screen.id : worst.screen.name;
+}
+
+/** A search of the repo's issues for any of `names`, each quoted so it's searched as written, never read as search
+ * syntax (`label:bug`, `OR`). */
+function issueSearch(names: string[]): string {
+  const terms = names.map((name) => `"${name.replaceAll('"', "")}"`);
+  return `${ISSUES_URL}?${new URLSearchParams({ q: `is:issue ${terms.join(" OR ")}` })}`;
+}
+
+/** A word of a command as a shell reads it: quoted when it has anything but plain characters (a space, a `#`). */
+function shellWord(word: string): string {
+  return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
+}
+
+/** How much of a screen's name the title carries: enough to say which, never so much the link can't fit. */
+const MAX_TITLE_NAME = 80;
+/** Cut by whole characters, so an emoji or other character of two UTF-16 units is never split. */
+const shortened = (name: string) => {
+  const chars = [...name];
+  return chars.length > MAX_TITLE_NAME ? `${chars.slice(0, MAX_TITLE_NAME).join("")}…` : name;
+};
+
+/** The longest link, encoded, that GitHub opens: it refuses a link of much more than eight thousand characters. */
+const MAX_LINK = 7000;
+const CUT = "… (cut to fit the link)";
+
+/** A link to a new issue, the form for something Designlane reads wrong, with the report, the framework and the
+ * version filled in. */
+export function issueLink(
+  text: string,
+  { version, framework, screen }: { version: string; framework?: string; screen?: string },
+): string {
+  const linkOf = (got: string) =>
+    `${ISSUES_URL}/new?${new URLSearchParams({
+      template: "reads-wrong.yml",
+      title: screen ? `Designlane reads ${shortened(screen)} wrong` : "Designlane reads my app wrong",
+      got,
+      version,
+      ...(framework && { framework }),
+    }).toString()}`;
+  const whole = linkOf(text);
+  if (whole.length <= MAX_LINK) return whole;
+  // Too long: keep lines from the top while they fit, leaving room to say the rest was cut.
+  let room = MAX_LINK - linkOf(CUT).length;
+  const kept: string[] = [];
+  for (const line of text.split("\n")) {
+    room -= encodedLength(`${line}\n`);
+    if (room < 0) break;
+    kept.push(line);
+  }
+  return linkOf([...kept, CUT].join("\n"));
+}
+
+/** How long text is once it's in a link, where a space becomes + and 界 becomes %E7%95%8C. Each character is
+ * encoded on its own, so the lengths of a report's lines add up to the length of the report. */
+function encodedLength(text: string): number {
+  return new URLSearchParams({ got: text }).toString().length - "got=".length;
 }
 
 function parse(argv: string[]) {
@@ -103,6 +231,7 @@ function parse(argv: string[]) {
         json: { type: "boolean" },
         all: { type: "boolean" },
         screen: { type: "string" },
+        report: { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -118,9 +247,12 @@ const counted = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? 
 const byPlace = (a: { file: string; line: number }, b: { file: string; line: number }) =>
   a.file.localeCompare(b.file) || a.line - b.line;
 
-/** The app's issues, for a person: what can't be read, then what may be read wrong, kind by kind. A view's issues are
- * counted once, though every screen it's placed in has them. */
-function report(all: { screen: ScreenRef; issues: LayoutIssues }[], everything: boolean): string {
+/** The app's issues, for a person: what can't be read, then what may be read wrong, kind by kind, and, unless a link
+ * to report them follows, how to. A view's issues are counted once, though every screen it's placed in has them. */
+function report(
+  all: { screen: ScreenRef; issues: LayoutIssues }[],
+  { everything, askToReport }: { everything: boolean; askToReport: boolean },
+): string {
   const own = all.filter((a) => a.issues.unreadable?.view === a.screen.id).length;
   const stopped = all.filter((a) => a.issues.unreadable && a.issues.unreadable.view !== a.screen.id).length;
   const lines = [
@@ -153,10 +285,11 @@ function report(all: { screen: ScreenRef; issues: LayoutIssues }[], everything: 
       "",
       `${summed.map(([kind, found]) => counted(found.length, KINDS[kind])).join(", ")} (--all lists them)`,
     );
-  if (lines.length > 1)
+  // With --report, the link that follows asks instead.
+  if (lines.length > 1 && askToReport)
     lines.push(
       "",
-      `Found something Designlane should read better? Open an issue with the lines above: ${ISSUES_URL}`,
+      `Found something Designlane should read better? designlane doctor --report gives a link to an issue with the lines above: ${ISSUES_URL}`,
     );
   return lines.join("\n");
 }
